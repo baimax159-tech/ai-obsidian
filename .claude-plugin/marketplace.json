@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "ai-obsidian",
+  "owner": {
+    "name": "baimax",
+    "email": "baimax159@gmail.com"
+  },
+  "description": "ai-obsidian: a Claude Code plugin marketplace providing efficient skills and extensions for development workflows",
+  "metadata": {},
+  "plugins": [
+    {
+      "name": "ai-obsidian",
+      "source": "./plugins/ai-obsidian"
+    }
+  ]
+}

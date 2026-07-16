@@ -1,0 +1,84 @@
+/* ============================================================
+   opensource-research 调研报告样式
+   作用域：仅 frontmatter cssclasses 含 research-report 的笔记，
+           不影响 vault 内其他笔记。
+   取色全部走 Obsidian 主题变量 var(--...)，自动跟随明暗主题。
+   启用：设置 → 外观 → CSS 代码片段 → 打开「调研样式」。
+   ============================================================ */
+
+/* —— 速览：hero 卡片（柔和边框 + 顶部渐变 + 强调色字段标签）—— */
+.research-report .callout[data-callout="abstract"] {
+  border: 1px solid rgba(var(--callout-color), 0.30);
+  border-left-width: 4px;
+  border-radius: var(--radius-l);
+  background: linear-gradient(
+    180deg,
+    rgba(var(--callout-color), 0.07),
+    rgba(var(--callout-color), 0.01) 70%
+  );
+  padding: 0.9em 1.2em;
+}
+.research-report .callout[data-callout="abstract"] .callout-title {
+  font-size: 1.08em;
+  letter-spacing: 0.02em;
+}
+.research-report .callout[data-callout="abstract"] .callout-content {
+  line-height: 1.9;
+}
+.research-report .callout[data-callout="abstract"] .callout-content strong {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+/* —— 一句话结论：略放大提亮 —— */
+.research-report .callout[data-callout="quote"] {
+  border-left-width: 4px;
+  font-size: 1.05em;
+}
+
+/* —— 决策三色块：加粗左色条 + 淡色底，读感更硬 —— */
+.research-report .callout[data-callout="success"],
+.research-report .callout[data-callout="danger"],
+.research-report .callout[data-callout="warning"] {
+  border-left: 5px solid rgb(var(--callout-color));
+  border-radius: var(--radius-m);
+  background: rgba(var(--callout-color), 0.06);
+  margin-block: 0.5em;
+}
+
+/* —— 选型补充 callouts：统一圆角与左条 —— */
+.research-report .callout[data-callout="info"],
+.research-report .callout[data-callout="tip"],
+.research-report .callout[data-callout="caution"] {
+  border-left-width: 4px;
+  border-radius: var(--radius-m);
+}
+
+/* —— 章节标题：细下划线，分段更清晰 —— */
+.research-report h2 {
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.2em;
+}
+
+/* —— 同类对比表：斑马纹 + 表头强调 + 首列名次徽章对齐 —— */
+.research-report table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.research-report thead tr {
+  background: var(--background-secondary-alt);
+}
+.research-report thead th {
+  font-weight: 600;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+.research-report tbody tr:nth-child(even) {
+  background: var(--background-secondary);
+}
+.research-report tbody tr:hover {
+  background: var(--background-modifier-hover);
+}
+.research-report td:first-child {
+  white-space: nowrap;
+  font-weight: 500;
+}
