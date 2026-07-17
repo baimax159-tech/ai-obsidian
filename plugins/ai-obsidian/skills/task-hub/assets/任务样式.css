@@ -1,0 +1,31 @@
+/* task-hub 任务注释样式：弱化任务下方缩进 blockquote 注释 */
+/* 作用域限定列表内嵌套的 blockquote，不影响正文顶层引用 */
+.markdown-rendered li blockquote {
+	margin: 2px 0;
+	padding: 2px 10px;
+	border-left: 2px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-style: italic;
+	font-size: 0.9em;
+}
+
+.markdown-rendered li blockquote p {
+	margin: 0;
+}
+
+/* task-hub 父任务进度条：每个子任务一段，按状态上色 */
+/* 无此片段时仍降级为黑白 ▰▱ 条 */
+.markdown-rendered .tp {
+	margin-left: 6px;
+	letter-spacing: 1px;
+	font-size: 0.85em;
+	vertical-align: middle;
+}
+.markdown-rendered .tp i {
+	font-style: normal;
+}
+.markdown-rendered .tp .s-done  { color: var(--color-green); }
+.markdown-rendered .tp .s-doing { color: var(--color-yellow); }
+.markdown-rendered .tp .s-blk   { color: var(--color-red); }
+.markdown-rendered .tp .s-todo  { color: var(--text-faint); }
