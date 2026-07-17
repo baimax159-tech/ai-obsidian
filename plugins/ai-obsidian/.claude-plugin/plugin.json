@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai-obsidian",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Obsidian workflow toolkit: vault initialization, project-local Markdown task management, work report generation, and open-source tool/framework research",
   "author": {
     "name": "baimax",
