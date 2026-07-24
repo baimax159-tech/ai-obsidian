@@ -2,7 +2,7 @@
 name: vault-init
 description: 初始化 Obsidian 顶级知识仓库：一次性铺好「全动态聚合仪表盘首页 + 子库骨架 + Inbox + 入口文件 + Homepage/Dataview 配置」，让空库开箱即有可用首页。当用户说"初始化 Obsidian 仓库/知识库"、"搭建 Obsidian 首页/仪表盘/dashboard"、"新建 Obsidian vault 骨架"、"给我的笔记库做个聚合首页"或使用 /ai-obsidian:vault-init 时触发。
 allowed-tools: Read, Write, Bash, Glob, AskUserQuestion
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Obsidian 顶级仓库初始化
@@ -23,7 +23,7 @@ disable-model-invocation: true
 
 ## 工作流程
 
-确认目标库根 → 询问子库集合 → 铺目录骨架 → 配 Homepage → 汇报手动项
+确认目标库根 → 询问子库集合 → 展示创建清单并确认 → 铺目录骨架 → 配 Homepage → 汇报手动项
 
 ---
 
@@ -45,7 +45,7 @@ ls -d .obsidian/plugins/*/ 2>/dev/null   # 看 Dataview / homepage 是否已装
 
 空库直接铺首页只有 Hero 和一堆 0，观感差。**至少预置 2~4 个子库**，每个子库放一个同名入口文件，让首页底部「子库入口」有目标可跳。
 
-用 `AskUserQuestion` 让用户选子库集合：
+用 `宿主原生交互工具` 让用户选子库集合：
 
 - **问题**：这个库要预置哪些子库？（顶层文件夹即子库，首页按名称排序、按数量自适应配色）
 - **选项**（multiSelect）：
@@ -56,6 +56,8 @@ ls -d .obsidian/plugins/*/ 2>/dev/null   # 看 Dataview / homepage 是否已装
   - 用户可通过 "Other" 自填中英文子库名
 
 用户没特别要求就用默认四件套 `工作 / 技术 / 个人 / 其他`。
+
+在任何写入前，展示将创建的首页、Inbox、子库、入口文件及可能写入的 Homepage 配置；要求用户明确确认“开始初始化”。仅提出“想搭建”或浏览方案时只展示清单，不写文件。
 
 ## 步骤 3：铺目录骨架
 
@@ -99,11 +101,11 @@ Homepage 插件让 Obsidian 启动时自动打开首页。它的配置文件是 
 
 ## 步骤 5：汇报无法自动化的手动项
 
-铺完后，给用户一份**必做手动清单**——这些是 Claude 点不动的，漏了会白屏：
+铺完后，给用户一份**必做手动清单**——这些无法由当前宿主自动完成，漏了会白屏：
 
 1. **装两个社区插件**：`Dataview`（必需，渲染整个仪表盘）、`Homepage`（必需，启动自动打开首页），各自 Enable。
 2. **开 Dataview 的 JS 查询**：设置 → Dataview → **Enable JavaScript Queries = 开**（关掉则 `dataviewjs` 不执行，整页白屏；建议 Enable Inline JS 也开）。
-3. **指 Homepage 到首页**：若步骤 4 因插件未装没能写 `data.json`，装完后到 设置 → Homepage 把首页指向 `首页`、勾 Open on startup（或让 Claude 补写 `data.json`）。
+3. **指 Homepage 到首页**：若步骤 4 因插件未装没能写 `data.json`，装完后到 设置 → Homepage 把首页指向 `首页`、勾 Open on startup（或让当前宿主补写 `data.json`）。
 4. **重启验证**：重开 Obsidian，首页应自动打开并渲染出 Hero / KPI / 环形占比 / 子库卡片 / 更新热力 / 入口。
 
 可选增强（非必需，可不提或一句带过）：`Style Settings`（主题变量微调）、`Iconize`（给子库文件夹加图标）。

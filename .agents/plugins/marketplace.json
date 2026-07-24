@@ -1,0 +1,20 @@
+{
+  "name": "ai-obsidian",
+  "interface": {
+    "displayName": "ai-obsidian"
+  },
+  "plugins": [
+    {
+      "name": "ai-obsidian",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ai-obsidian"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

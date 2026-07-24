@@ -23,7 +23,8 @@ allowed-tools: WebSearch, WebFetch, Read, Write, AskUserQuestion, mcp__github__s
    - 成本与锁定信号:license 商用限制、生态绑定/退出成本
    - 安全与供应链信号:遥测/隐私默认、依赖面、hook/CLI 信任边界
    - npm/包信息(如适用)
-   - 优先用 WebSearch/WebFetch;GitHub 信息可用 github MCP 工具(search_repositories、get_file_contents、list_commits 等)。
+   - 优先用 WebSearch/WebFetch；GitHub MCP 可用时可补充结构化信息（search_repositories、get_file_contents、list_commits 等）。
+   - **GitHub MCP 不可用时**：退化为 GitHub 公开页面、README、release 页面和官方文档；无法核实的指标标注“未验证”，不得编造 star、提交频率或 Issue 数据。
 3. **找同类项目**:web 搜索同类开源项目,按 GitHub star 数倒序取 Top5;其中**留 1 个名额给"近一年新兴项目"**(用 GitHub 结构化信号捞取,如 `created:>近一年` 配合 stars 排序、或 star 增长率),其余 4 个按累计 star。不用 Repository Of The Day 等单日/编辑口味榜单——不可复现、破坏报告可比性。
 4. **按模板填充**:读取 `assets/报告模板.md`,逐章节填写,替换所有 `<...>` 占位符。frontmatter 的 `cssclasses`(保留 `research-report`)、`tags`、`aliases` 一并填充。
 5. **写入报告**:默认输出到 `调研/<项目名>.md`(相对当前项目根目录,项目原名,无后缀);用户显式指定路径时以用户指定为准。一句话结论前置。

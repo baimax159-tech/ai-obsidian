@@ -1,0 +1,39 @@
+{
+  "name": "ai-obsidian",
+  "version": "1.3.0",
+  "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex session scanning",
+  "author": {
+    "name": "baimax",
+    "email": "baimax159@gmail.com"
+  },
+  "homepage": "https://github.com/baimax159-tech/claude-forge",
+  "repository": "https://github.com/baimax159-tech/claude-forge",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "task-management",
+    "report",
+    "worklog",
+    "markdown",
+    "research",
+    "claude-code",
+    "codex",
+    "session-scan"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Forge Obsidian",
+    "shortDescription": "Manage Obsidian work and scan coding sessions.",
+    "longDescription": "Obsidian skills for vault initialization, Markdown task management, work reports, open-source research, and evidence-based Claude Code/Codex session scanning.",
+    "developerName": "Max Bai",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Set up this folder as an Obsidian work vault.",
+      "Create a work report from this project's Obsidian tasks.",
+      "Scan yesterday's Claude Code and Codex sessions and summarize the work evidence."
+    ]
+  }
+}

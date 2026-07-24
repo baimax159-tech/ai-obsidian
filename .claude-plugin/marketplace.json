@@ -5,7 +5,7 @@
     "name": "baimax",
     "email": "baimax159@gmail.com"
   },
-  "description": "ai-obsidian: a Claude Code plugin marketplace providing efficient skills and extensions for development workflows",
+  "description": "ai-obsidian: a multi-agent plugin marketplace providing skills and extensions for development workflows",
   "metadata": {},
   "plugins": [
     {
