@@ -84,10 +84,37 @@ export const TEST_PATTERNS = [
   "golangci-lint",
   "go build",
 ];
+export const DEVELOPMENT_CODE_EXTENSIONS = new Set([
+  ".c", ".cc", ".clj", ".cljs", ".cljc", ".cpp", ".cs", ".css", ".cxx", ".dart", ".ex", ".exs",
+  ".fs", ".fsx", ".go", ".gql", ".graphql", ".groovy", ".h", ".hpp", ".hrl", ".html", ".java",
+  ".js", ".jsx", ".kt", ".kts", ".lua", ".mjs", ".nix", ".php", ".proto", ".ps1", ".py", ".pyi",
+  ".r", ".rb", ".rs", ".sass", ".scala", ".scss", ".sh", ".sol", ".sql", ".svelte", ".swift",
+  ".tf", ".thrift", ".ts", ".tsx", ".vue", ".wasm", ".wat", ".zig", ".zsh",
+]);
+export const DEVELOPMENT_CONFIG_EXTENSIONS = new Set([
+  ".conf", ".env", ".hcl", ".ini", ".json", ".jsonc", ".properties", ".toml", ".xml", ".yaml", ".yml",
+]);
+export const DEVELOPMENT_FILE_NAMES = new Set([
+  ".dockerignore", ".editorconfig", ".gitattributes", ".gitignore", ".gitmodules", ".npmrc", ".nvmrc",
+  "agents.md", "build.gradle", "build.gradle.kts", "cargo.lock", "cargo.toml", "changelog.md", "claude.md",
+  "cmakelists.txt", "composer.json", "deno.json", "deno.jsonc", "docker-compose.yml", "docker-compose.yaml",
+  "dockerfile", "eslint.config.js", "eslint.config.mjs", "gemfile", "go.mod", "go.sum", "gradle.properties",
+  "gradlew", "gradlew.bat", "jest.config.js", "jest.config.ts", "makefile", "marketplace.json", "package-lock.json",
+  "package.json", "pipfile", "plugin.json", "pnpm-lock.yaml", "pom.xml", "pyproject.toml", "readme.md",
+  "requirements.txt", "setup.cfg", "setup.py", "skill.md", "tsconfig.json", "vite.config.js", "vite.config.ts",
+  "vitest.config.js", "vitest.config.ts", "webpack.config.js", "webpack.config.ts", "yarn.lock",
+]);
+export const DEVELOPMENT_PATH_SEGMENTS = new Set([
+  ".agents", ".claude", ".codex", ".github", "api", "app", "client", "config", "configs", "lib", "plugins",
+  "scripts", "server", "skills", "spec", "specs", "src", "test", "tests",
+]);
+export const DEVELOPMENT_TEXT = /(?:代码|编码|编程|源码|程序|函数|方法|接口|前端|后端|服务端|客户端|数据库|脚本|配置文件|依赖|编译|构建|单元测试|集成测试|测试用例|重构|调试|排查|修复|缺陷|漏洞|仓库|分支|提交|合并请求|拉取请求|部署|容器|插件|命令行|架构|模块|组件|算法|数据结构|数据模型|中间件|微服务|技术方案|网页|网站|应用程序|开发(?:相关|环境|工具|流程|工作|任务|项目|功能|文档|规范|计划|者)|实现(?:功能|接口|模块|逻辑)|新增(?:功能|接口|模块)|修改(?:功能|接口|模块|逻辑))|\b(?:algorithm|api|architecture|backend|branch|bug|build|class|cli|code|coding|commit|compile|component|config(?:uration)?|container|data model|data structure|database|debug|dependency|deploy|docker|endpoint|fix|frontend|function|integration tests?|interface|merge request|method|microservice|middleware|migration|module|plugin|program(?:ming)?|pull request|refactor|repo(?:sitory)?|schema|script|sdk|source|sql|technical design|test cases?|unit tests?)\b/iu;
+export const DEVELOPMENT_COMMAND = /(?:^|[\s;&|])(?:bash|bun|cargo|cmake|deno|docker|dotnet|eslint|git|go|golangci-lint|gradle|gradlew|java|javac|make|mvn|node|npm|npx|php|pnpm|powershell|prettier|psql|pwsh|py|pytest|python|ruby|sh|terraform|tsc|vite|vitest|webpack|yarn)(?:$|\s)/i;
 
 const HELP = `usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]
                          [--claude-projects-root ROOT | --claude-session-root ROOT]
                          [--codex-sessions-root ROOT]
+                         [--scope {development,all}]
                          [--output OUTPUT] [--force]
                          [--max-text-chars MAX_TEXT_CHARS]
 
@@ -105,6 +132,9 @@ options:
                         One Claude project transcript directory; repeatable
   --codex-sessions-root ROOT
                         Codex sessions root; repeatable and recursively scanned
+  --scope {development,all}
+                        Scan development-related sessions only (default), or
+                        retain all matched sessions
   --output OUTPUT       Optional new UTF-8 JSON output path
   --force               Allow replacing an existing output file
   --max-text-chars MAX_TEXT_CHARS
@@ -826,6 +856,54 @@ export function classifyTool(name, toolInput) {
   return "other";
 }
 
+export function isDevelopmentPath(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+  const normalized = value.replaceAll("\\", "/").split(/[?#]/, 1)[0].toLowerCase();
+  const segments = normalized.split("/").filter(Boolean);
+  const basename = segments.at(-1) || "";
+  if (DEVELOPMENT_FILE_NAMES.has(basename) || basename === ".env" || basename.startsWith(".env.")) return true;
+  const extension = path.posix.extname(basename);
+  if (DEVELOPMENT_CODE_EXTENSIONS.has(extension)) return true;
+  return DEVELOPMENT_CONFIG_EXTENSIONS.has(extension)
+    && segments.slice(0, -1).some((segment) => DEVELOPMENT_PATH_SEGMENTS.has(segment));
+}
+
+export function isDevelopmentText(value) {
+  return typeof value === "string" && DEVELOPMENT_TEXT.test(value);
+}
+
+export function developmentSessionReasons(session) {
+  const reasons = new Set();
+  if ((session.tests || []).length > 0) reasons.add("test");
+  if ((session.commits || []).length > 0) reasons.add("commit");
+
+  for (const change of session.file_changes || []) {
+    if (isDevelopmentPath(change.raw_path ?? change.path)) reasons.add("development-file");
+  }
+  for (const action of session.tool_actions || []) {
+    if (new Set(["git_status", "git_diff", "test", "commit"]).has(action.category)) reasons.add(action.category);
+    const normalizedName = String(action.name || "").toLowerCase();
+    if (normalizedName === "lsp" || normalizedName.includes("codegraph")) reasons.add("code-navigation");
+    const input = action.input || {};
+    const pathKeys = ["file_path", "notebook_path", "path", "glob"];
+    if (String(action.name || "").toLowerCase() === "glob") pathKeys.push("pattern");
+    if (pathKeys.some((key) => isDevelopmentPath(input[key]))) {
+      reasons.add("development-path");
+    }
+    if (typeof input.command === "string" && DEVELOPMENT_COMMAND.test(input.command)) reasons.add("development-command");
+    if (new Set(["question", "delegation"]).has(action.category) && isDevelopmentText(JSON.stringify(input))) {
+      reasons.add("development-tool-context");
+    }
+  }
+  for (const request of session.human_requests || []) {
+    if (isDevelopmentText(request.content?.text)) reasons.add("development-request");
+  }
+  for (const message of session.assistant_visible_messages || []) {
+    if (isDevelopmentText(message.visible_text?.text)) reasons.add("development-response");
+  }
+  return [...reasons].sort();
+}
+
 export function resultStatus(result, inDate) {
   if (result == null) return "missing";
   if (!inDate) return "outside_date_window";
@@ -1407,7 +1485,8 @@ export function projectIndex(sessions) {
   return [[...projects.keys()].sort().map((key) => projects.get(key)), externalEvidence];
 }
 
-export function buildDocument(sources, selectedDate, timezone, timezoneRequested, timezoneResolved, maxText) {
+export function buildDocument(sources, selectedDate, timezone, timezoneRequested, timezoneResolved, maxText, scope = "development") {
+  if (!new Set(["development", "all"]).has(scope)) throw new Error(`unsupported scan scope: ${scope}`);
   const grouped = new Map();
   const diagnostics = [];
   let recordsRead = 0;
@@ -1428,9 +1507,19 @@ export function buildDocument(sources, selectedDate, timezone, timezoneRequested
   }
 
   const sessions = [];
+  let sessionsExamined = 0;
+  let sessionsFilteredNonDevelopment = 0;
   for (const { sessionId, records } of grouped.values()) {
     const session = buildSession(sessionId, records, selectedDate, maxText);
-    if (session) sessions.push(session);
+    if (!session) continue;
+    sessionsExamined += 1;
+    const developmentSignals = developmentSessionReasons(session);
+    session.diagnostics.development_signals = developmentSignals;
+    if (scope === "development" && developmentSignals.length === 0) {
+      sessionsFilteredNonDevelopment += 1;
+      continue;
+    }
+    sessions.push(session);
   }
   sessions.sort((left, right) => left.first_selected_at.localeCompare(right.first_selected_at) || left.session_key.localeCompare(right.session_key));
   const [projects, externalPathEvidence] = projectIndex(sessions);
@@ -1440,6 +1529,7 @@ export function buildDocument(sources, selectedDate, timezone, timezoneRequested
       date: selectedDate,
       timezone_requested: timezoneRequested ?? null,
       timezone_resolved: timezoneResolved,
+      scope,
       subagent_mode: "metadata_only",
       sources: [...sources],
     },
@@ -1447,6 +1537,8 @@ export function buildDocument(sources, selectedDate, timezone, timezoneRequested
       files_discovered: sources.length,
       records_read: recordsRead,
       records_in_date: recordsInDate,
+      sessions_examined: sessionsExamined,
+      sessions_filtered_non_development: sessionsFilteredNonDevelopment,
       sessions_matched: sessions.length,
       items: diagnostics,
     },
@@ -1517,6 +1609,7 @@ export function parseArgs(argv) {
     claude_projects_root: [],
     claude_session_root: [],
     codex_sessions_root: [],
+    scope: "development",
     output: null,
     force: false,
     max_text_chars: 4000,
@@ -1545,6 +1638,11 @@ export function parseArgs(argv) {
       let value;
       [value, index] = optionValue(argv, index, "--codex-sessions-root");
       args.codex_sessions_root.push(value);
+    } else if (option === "--scope") {
+      [args.scope, index] = optionValue(argv, index, "--scope");
+      if (!new Set(["development", "all"]).has(args.scope)) {
+        throw new Error(`argument --scope: invalid choice: ${JSON.stringify(args.scope)} (choose from 'development', 'all')`);
+      }
     } else if (option === "--output") {
       [args.output, index] = optionValue(argv, index, "--output");
     } else if (argument === "--force") {
@@ -1572,6 +1670,7 @@ function printCliError(message) {
   process.stderr.write("usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]\n");
   process.stderr.write("                         [--claude-projects-root ROOT | --claude-session-root ROOT]\n");
   process.stderr.write("                         [--codex-sessions-root ROOT]\n");
+  process.stderr.write("                         [--scope {development,all}]\n");
   process.stderr.write("                         [--output OUTPUT] [--force]\n");
   process.stderr.write("                         [--max-text-chars MAX_TEXT_CHARS]\n");
   process.stderr.write(`scan_sessions.mjs: error: ${message}\n`);
@@ -1599,6 +1698,7 @@ export function main(argv = process.argv.slice(2)) {
       args.timezone_name,
       timezoneResolved,
       args.max_text_chars,
+      args.scope,
     );
     writeDocument(document, args.output, new Set(sources.map((source) => source.path)), args.force);
     return 0;
@@ -1617,10 +1717,13 @@ export {
   classifyTool as classify_tool,
   cleanHumanText as clean_human_text,
   discoverTranscripts as discover_transcripts,
+  developmentSessionReasons as development_session_reasons,
   extractDecisionAnswers as extract_decision_answers,
   extractExitCode as extract_exit_code,
   extractText as extract_text,
   isRealHuman as is_real_human,
+  isDevelopmentPath as is_development_path,
+  isDevelopmentText as is_development_text,
   iterContentBlocks as iter_content_blocks,
   jsonSha256 as json_sha256,
   normalizePath as normalize_path,

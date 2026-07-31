@@ -2,6 +2,8 @@
 
 本参考定义 `scripts/scan_sessions.mjs` 的确定性解析契约。扫描器只提取证据，不判断业务任务是否真正完成。输出 schema 为 `session-scan/v2`。
 
+默认 `scan.scope = development`，只输出具有确定性开发信号的会话；显式 `--scope all` 才保留当天全部匹配会话。
+
 ## 目录发现
 
 ### Claude Code
@@ -105,6 +107,17 @@ Codex envelope 形如：
 优先使用目标日期内的 session cwd，再使用工具 input 中的 `cwd/workdir`。Claude project slug 只作 fallback。外部文件修改进入 `external_path_evidence`，不自动创建新项目。
 
 项目索引使用 `session_keys` 表达双宿主会话；`session_ids` 仅作兼容信息。
+
+## 开发范围过滤
+
+会话在证据构建后、项目归类前判定。以下任一信号可保留会话：
+
+- 源码、开发配置、插件/技能文件或常见仓库文件路径；
+- 文件编辑、测试、构建、lint、Git 或常见开发命令；
+- LSP、CodeGraph 等代码导航工具；
+- 用户诉求、Assistant 可见结论或委派/确认输入中明确的开发语义。
+
+普通文档、图片/音视频、旅行生活问答和通用写作不会仅因发生在某个 cwd 下而视为开发工作。输出诊断记录 `sessions_examined`、`sessions_filtered_non_development` 和最终 `sessions_matched`；保留会话的 `diagnostics.development_signals` 记录命中的确定性信号。
 
 ## 派生证据
 

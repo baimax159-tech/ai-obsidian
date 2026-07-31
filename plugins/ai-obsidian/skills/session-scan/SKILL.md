@@ -6,7 +6,7 @@ allowed-tools: Read, Skill, AskUserQuestion
 compatibility: Requires Node.js 20+ with full ICU and read access to Claude Code or Codex transcript files.
 metadata:
   author: project
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # Session Scan
@@ -15,7 +15,7 @@ metadata:
 
 ## 工作流程
 
-确定日期与范围 → 运行只读扫描器 → 检查诊断 → 按项目归纳证据 → 必要时只读核验当前状态 → 输出中文总结 → 仅在当前用户明确要求时交接 `task-hub`。
+确定日期与开发范围 → 运行只读扫描器 → 检查诊断 → 按项目归纳开发证据 → 必要时只读核验当前状态 → 输出中文总结 → 仅在当前用户明确要求时交接 `task-hub`。
 
 ## 步骤 1：确定日期、时区与范围
 
@@ -24,6 +24,7 @@ metadata:
 - 日期：默认当前本地日期；用户指定时使用指定值。
 - 时区：优先采用用户指定时区；Windows 缺 IANA tzdata 时使用固定偏移，如 `+08:00`。
 - 宿主：默认同时扫描本机存在的 Claude Code 与 Codex 会话目录。
+- 内容范围：默认 `development`，只保留开发相关会话；只有用户明确要求排查完整原始范围时才使用 `all`。
 - 输出：默认只在聊天中返回工作内容；只有用户明确要求保存原始证据时才使用 `--output`。
 
 默认目录：
@@ -46,7 +47,8 @@ Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subage
 ```bash
 node "<skill-base-dir>/scripts/scan_sessions.mjs" \
   --date YYYY-MM-DD \
-  --timezone +08:00
+  --timezone +08:00 \
+  --scope development
 ```
 
 限定宿主目录时可组合使用：
@@ -55,11 +57,14 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
 node "<skill-base-dir>/scripts/scan_sessions.mjs" \
   --date YYYY-MM-DD \
   --timezone +08:00 \
+  --scope development \
   --claude-projects-root "<claude-projects-root>" \
   --codex-sessions-root "<codex-sessions-root>"
 ```
 
 单个 Claude project transcript 目录使用 `--claude-session-root`。兼容别名 `--projects-root`、`--session-root` 仍表示 Claude Code 路径。
+
+`--scope development` 是默认值。它根据源码/开发配置路径、文件修改、测试/构建、Git、开发命令和明确开发语义保留会话。`--scope all` 只用于用户明确要求的全量排查，不作为日常工作总结口径。
 
 优先读取 stdout。只有当前用户明确要求保存原始扫描结果时才添加：
 
@@ -75,7 +80,7 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
 
 检查：
 
-- `files_discovered`、`records_in_date`、`sessions_matched`；
+- `files_discovered`、`records_in_date`、`sessions_examined`、`sessions_filtered_non_development`、`sessions_matched`；
 - 各 source 的 `host`；
 - malformed JSONL、unstable read；
 - unclassified user records；
@@ -95,6 +100,8 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
 6. 任务跟踪状态。
 
 使用 `session_key`（`claude:<id>` / `codex:<id>`）区分宿主，避免相同 session ID 被合并。将同一主题的多轮追问合并为一个工作主线，后续明确决策覆盖早期方案。
+
+只归纳开发相关工作主题。同一会话若混入生活问答、通用写作、旅行规划、媒体生成等非开发话题，跳过这些话题，不要因为会话整体已命中开发范围就一并输出。
 
 不要把 system/developer 注入、tool result、Skill 正文、task notification、local command 输出、子代理 prompt 或 Codex 的重复 `event_msg` 算作用户沟通。不要输出 Claude thinking 或 Codex reasoning 内容。
 
