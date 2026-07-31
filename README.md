@@ -20,7 +20,7 @@
 
 ```bash
 codex plugin marketplace add https://github.com/baimax159-tech/ai-obsidian --sparse .agents/plugins --sparse plugins/ai-obsidian
-codex plugin install ai-obsidian@ai-obsidian
+codex plugin add ai-obsidian@ai-obsidian
 ```
 
 ## 插件与技能
