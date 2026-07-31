@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai-obsidian",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex session scanning",
   "author": {
     "name": "baimax",
     "email": "baimax159@gmail.com"
   },
-  "homepage": "https://github.com/baimax159-tech/claude-forge",
-  "repository": "https://github.com/baimax159-tech/claude-forge",
+  "homepage": "https://github.com/baimax159-tech/ai-obsidian",
+  "repository": "https://github.com/baimax159-tech/ai-obsidian",
   "license": "MIT",
   "keywords": [
     "obsidian",

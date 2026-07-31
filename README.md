@@ -19,7 +19,7 @@
 ### Codex
 
 ```bash
-codex plugin marketplace add https://github.com/baimax159-tech/ai-obsidian --sparse .agents/plugins
+codex plugin marketplace add https://github.com/baimax159-tech/ai-obsidian --sparse .agents/plugins --sparse plugins/ai-obsidian
 codex plugin install ai-obsidian@ai-obsidian
 ```
 
