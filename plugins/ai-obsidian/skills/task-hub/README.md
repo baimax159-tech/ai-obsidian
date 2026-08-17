@@ -43,8 +43,6 @@
 
 **无。** 全部操作（创建 / 修改 / 归档 / 报告）纯 Markdown + HTML。周报表格用纯 HTML `<table>` + `rowspan`，项目列跨行合并由 Obsidian 阅读视图 / GitHub 原生渲染，不再依赖 AnyBlock。
 
-## 兼容入口
+## 旧数据兼容
 
-`task-hub` 已替代 `work-management` 与 `report-generation`。旧命令保留一个兼容周期并转交到 task-hub，不再维护独立写入规范。
-
-读取时兼容旧 `#project/项目名` 和普通列表备注；普通修改保留原任务树格式。只有明确要求迁移时，才会在预览、备份和确认后统一为项目分区 + blockquote + 父任务进度条格式。
+`task-hub` 是唯一任务管理入口。读取时兼容旧 `#project/项目名` 和普通列表备注；普通修改保留原任务树格式。只有明确要求迁移时，才会在预览、备份和确认后统一为项目分区 + blockquote + 父任务进度条格式。

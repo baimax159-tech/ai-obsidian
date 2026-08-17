@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 - 修改状态、时间、标题、备注、优先级、项目或父子结构：读 `references/task-editing.md`；会重算或修复父任务进度条时，再读 `references/task-format.md` 的进度条契约。
 - 归档或恢复：读 `references/task-format.md` 与 `references/task-templates.md`。
 - 生成报告：读 `references/reporting.md`。
-- 批量转换旧 `work-management` 格式：仅在用户明确要求迁移时读 `references/legacy-migration.md`。
+- 批量转换旧任务格式：仅在用户明确要求迁移时读 `references/legacy-migration.md`。
 
 不要为普通查看或单条修改加载所有参考文件，也不要在普通操作中静默迁移整个任务库。
 
