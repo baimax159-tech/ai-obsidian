@@ -6,10 +6,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import zlib from "node:zlib";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const SCHEMA_VERSION = "session-scan/v2";
 export const REDACTED = "<redacted>";
+export const DSH_SESSION_FILE = "session.jsonl";
+export const DSH_SESSION_ZSTD_FILE = "session.jsonl.zstd";
+export const DSH_CHUNK_ROW_TYPES = new Set(["text-chunks", "reasoning-chunks", "tool-call-chunks"]);
+export const DSH_ZSTD_MAGIC = 4247762216; // 0xFD2FB528 little-endian
+export const DSH_HAS_ZSTD = typeof zlib.zstdDecompressSync === "function";
 export const SENSITIVE_KEY = /(?:token|secret|password|authorization|cookie|credential|api[_-]?key|private[_-]?key)/i;
 export const FIXED_OFFSET = /^([+-])(\d{2}):(\d{2})$/;
 export const TEXT_REDACTIONS = [
@@ -114,11 +120,12 @@ export const DEVELOPMENT_COMMAND = /(?:^|[\s;&|])(?:bash|bun|cargo|cmake|deno|do
 const HELP = `usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]
                          [--claude-projects-root ROOT | --claude-session-root ROOT]
                          [--codex-sessions-root ROOT]
+                         [--dsh-sessions-root ROOT]
                          [--scope {development,all}]
                          [--output OUTPUT] [--force]
                          [--max-text-chars MAX_TEXT_CHARS]
 
-Scan Claude Code and Codex JSONL transcripts for work evidence.
+Scan Claude Code, Codex and DeepSeek Harness transcripts for work evidence.
 
 options:
   -h, --help            show this help message and exit
@@ -132,6 +139,9 @@ options:
                         One Claude project transcript directory; repeatable
   --codex-sessions-root ROOT
                         Codex sessions root; repeatable and recursively scanned
+  --dsh-sessions-root ROOT
+                        DeepSeek Harness sessions root (usually ~/.dsh/sessions);
+                        repeatable
   --scope {development,all}
                         Scan development-related sessions only (default), or
                         retain all matched sessions
@@ -144,7 +154,7 @@ options:
 
 export function buildParser() {
   return {
-    description: "Scan Claude Code and Codex JSONL transcripts for work evidence.",
+    description: "Scan Claude Code, Codex and DeepSeek Harness transcripts for work evidence.",
     help: HELP,
     parseArgs,
   };
@@ -264,16 +274,46 @@ function discoverCodexFiles(discovered, root, sessionRoot) {
   }
 }
 
-export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots) {
+function discoverDshFiles(discovered, root) {
+  // DeepSeek Harness layout: <root>/<project-dir>/<session-dir>/session.jsonl[.zstd]
+  for (const projectEntry of sortedDirectoryEntries(root)) {
+    if (!projectEntry.isDirectory()) continue;
+    const projectDir = path.join(root, projectEntry.name);
+    for (const sessionEntry of sortedDirectoryEntries(projectDir)) {
+      if (!sessionEntry.isDirectory()) continue;
+      const sessionDir = path.join(projectDir, sessionEntry.name);
+      const zstdPath = path.join(sessionDir, DSH_SESSION_ZSTD_FILE);
+      const jsonlPath = path.join(sessionDir, DSH_SESSION_FILE);
+      if (fs.existsSync(zstdPath) && fs.statSync(zstdPath).isFile()) {
+        addTranscript(discovered, zstdPath, {
+          host: "dsh",
+          sessionRoot: projectDir,
+          sourceKind: "dsh-sessions-root",
+        });
+      } else if (fs.existsSync(jsonlPath) && fs.statSync(jsonlPath).isFile()) {
+        addTranscript(discovered, jsonlPath, {
+          host: "dsh",
+          sessionRoot: projectDir,
+          sourceKind: "dsh-sessions-root",
+        });
+      }
+    }
+  }
+}
+
+export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots, dshSessionsRoots) {
   const discovered = new Map();
   const noExplicitRoots = (!projectsRoots || projectsRoots.length === 0)
     && (!sessionRoots || sessionRoots.length === 0)
-    && (!codexSessionsRoots || codexSessionsRoots.length === 0);
+    && (!codexSessionsRoots || codexSessionsRoots.length === 0)
+    && (!dshSessionsRoots || dshSessionsRoots.length === 0);
   if (noExplicitRoots) {
     const defaultClaudeRoot = path.join(os.homedir(), ".claude", "projects");
     const defaultCodexRoot = path.join(os.homedir(), ".codex", "sessions");
+    const defaultDshRoot = path.join(os.homedir(), ".dsh", "sessions");
     projectsRoots = fs.existsSync(defaultClaudeRoot) ? [defaultClaudeRoot] : [];
     codexSessionsRoots = fs.existsSync(defaultCodexRoot) ? [defaultCodexRoot] : [];
+    dshSessionsRoots = fs.existsSync(defaultDshRoot) ? [defaultDshRoot] : [];
   }
 
   const claudeRoots = [];
@@ -312,6 +352,14 @@ export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRo
       throw new Error(`Codex sessions root does not exist: ${rootValue}`);
     }
     discoverCodexFiles(discovered, root, root);
+  }
+
+  for (const rootValue of dshSessionsRoots || []) {
+    const root = expandUser(String(rootValue));
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+      throw new Error(`DSH sessions root does not exist: ${rootValue}`);
+    }
+    discoverDshFiles(discovered, root);
   }
 
   return [...discovered.keys()].sort().map((key) => discovered.get(key));
@@ -766,19 +814,246 @@ export function localIso(date, timezone) {
   return `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}${fraction}${sign}${pad(Math.floor(absoluteOffset / 60))}:${pad(absoluteOffset % 60)}`;
 }
 
+function scanZstdFrames(buffer) {
+  const frames = [];
+  let offset = 0;
+  while (offset < buffer.length) {
+    const start = offset;
+    if (buffer.length - offset < 4) break;
+    if (buffer.readUInt32LE(offset) !== DSH_ZSTD_MAGIC) {
+      throw new Error(`invalid Zstandard frame magic at byte ${offset}`);
+    }
+    offset += 4;
+    if (offset >= buffer.length) break;
+    const descriptor = buffer.readUInt8(offset);
+    offset += 1;
+    const contentSizeFlag = descriptor >>> 6;
+    const singleSegment = (descriptor & 32) !== 0;
+    const checksum = (descriptor & 4) !== 0;
+    const dictionaryFlag = descriptor & 3;
+    const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
+    const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : (1 << contentSizeFlag);
+    const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
+    if (buffer.length - offset < remainingHeaderBytes) break;
+    offset += remainingHeaderBytes;
+    for (;;) {
+      if (buffer.length - offset < 3) return frames;
+      const blockHeader = buffer.readUIntLE(offset, 3);
+      offset += 3;
+      const lastBlock = (blockHeader & 1) !== 0;
+      const blockType = (blockHeader >>> 1) & 3;
+      const blockSize = blockHeader >>> 3;
+      if (blockType === 3) throw new Error(`reserved Zstandard block type at byte ${offset - 3}`);
+      const payloadBytes = blockType === 1 ? 1 : blockSize;
+      if (buffer.length - offset < payloadBytes) return frames;
+      offset += payloadBytes;
+      if (lastBlock) break;
+    }
+    if (checksum) {
+      if (buffer.length - offset < 4) return frames;
+      offset += 4;
+    }
+    frames.push({ start, end: offset });
+  }
+  return frames;
+}
+
+export function dshTimestamp(raw) {
+  if (typeof raw?.time === "number" && Number.isFinite(raw.time)) {
+    return new Date(raw.time);
+  }
+  return null;
+}
+
+function dshTextFromContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(isMapping)
+    .map((block) => (typeof block.text === "string" ? block.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function dshToolResultText(data) {
+  const message = isMapping(data) ? data.message : null;
+  if (!isMapping(message) || !Array.isArray(message.content)) return "";
+  const parts = [];
+  for (const block of message.content) {
+    if (!isMapping(block)) continue;
+    if (block.type === "tool-result" && Array.isArray(block.content)) {
+      parts.push(dshTextFromContent(block.content));
+    } else if (typeof block.text === "string") {
+      parts.push(block.text);
+    }
+  }
+  return parts.filter(Boolean).join("\n");
+}
+
+export function normalizeDshEnvelope(raw, sequence, meta) {
+  const data = isMapping(raw?.data) ? raw.data : {};
+  const common = {
+    sessionId: meta.sessionId,
+    cwd: meta.cwd ?? null,
+  };
+  const type = raw?.type;
+
+  if (type === "user/message") {
+    if (data.source?.kind !== "user") return { type: "dsh_metadata", ...common };
+    return {
+      type: "user",
+      origin: { kind: "human" },
+      uuid: typeof data.id === "string" ? data.id : `dsh-user-${sequence}`,
+      message: { role: "user", content: data.content ?? [] },
+      ...common,
+    };
+  }
+
+  if (type === "assistant/message") {
+    const message = isMapping(data.message) ? data.message : {};
+    const content = Array.isArray(message.content)
+      ? message.content.filter(isMapping).map((block) =>
+          block.type === "reasoning" ? { type: "thinking" } : block,
+        )
+      : [];
+    return {
+      type: "assistant",
+      message: {
+        id: typeof message.id === "string" ? message.id : `dsh-assistant-${sequence}`,
+        role: "assistant",
+        content,
+      },
+      ...common,
+    };
+  }
+
+  if (type === "tool/call") {
+    const callId = typeof data.callId === "string" ? data.callId : `dsh-call-${sequence}`;
+    return {
+      type: "assistant",
+      message: {
+        id: `dsh-toolcall-${callId}`,
+        role: "assistant",
+        content: [{
+          type: "tool_use",
+          id: callId,
+          name: String(data.name || ""),
+          input: parseJsonObject(data.arguments),
+        }],
+      },
+      ...common,
+    };
+  }
+
+  if (type === "tool/result") {
+    const callId = typeof data.message?.source?.callId === "string" ? data.message.source.callId : null;
+    if (!callId) return { type: "dsh_metadata", ...common };
+    return {
+      type: "user",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: callId,
+          content: dshToolResultText(data),
+          is_error: false,
+        }],
+      },
+      ...common,
+    };
+  }
+
+  if (type === "tool/code-dispatch-start") {
+    const subCallId = typeof data.subCallId === "string" ? data.subCallId : `dsh-sub-${sequence}`;
+    return {
+      type: "assistant",
+      message: {
+        id: `dsh-subcall-${subCallId}`,
+        role: "assistant",
+        content: [{
+          type: "tool_use",
+          id: subCallId,
+          name: String(data.name || ""),
+          input: isMapping(data.arguments) ? data.arguments : {},
+        }],
+      },
+      ...common,
+    };
+  }
+
+  if (type === "tool/code-dispatch") {
+    const subCallId = typeof data.subCallId === "string" ? data.subCallId : null;
+    if (!subCallId) return { type: "dsh_metadata", ...common };
+    const isError = data.isError === true;
+    return {
+      type: "user",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: subCallId,
+          content: dshTextFromContent(data.content),
+          is_error: isError,
+        }],
+      },
+      resultStatus: isError ? "error" : "success",
+      ...common,
+    };
+  }
+
+  return { type: "dsh_metadata", ...common };
+}
+
 export function readRecords(source, timezone, maxText) {
   const records = [];
   const diagnostics = [];
+  const host = source.host || "claude";
   const before = fs.statSync(source.path, { bigint: true });
-  const content = fs.readFileSync(source.path, "utf8");
+  const buffer = fs.readFileSync(source.path);
+  let content;
+  if (host === "dsh" && source.path.endsWith(DSH_SESSION_ZSTD_FILE)) {
+    if (!DSH_HAS_ZSTD) {
+      diagnostics.push({
+        kind: "dsh-zstd-unavailable",
+        path: source.path,
+        error: "this Node.js build lacks zstd support in node:zlib",
+      });
+      return [records, diagnostics];
+    }
+    let frames;
+    try {
+      frames = scanZstdFrames(buffer);
+    } catch (error) {
+      diagnostics.push({ kind: "dsh-corrupt-zstd", path: source.path, error: error.message });
+      return [records, diagnostics];
+    }
+    if (frames.length === 0) {
+      diagnostics.push({ kind: "dsh-empty", path: source.path });
+      return [records, diagnostics];
+    }
+    const plaintexts = [];
+    for (const frame of frames) {
+      try {
+        plaintexts.push(zlib.zstdDecompressSync(buffer.subarray(frame.start, frame.end)).toString("utf8"));
+      } catch (error) {
+        diagnostics.push({ kind: "dsh-corrupt-frame", path: source.path, error: error.message });
+      }
+    }
+    content = plaintexts.join("\n");
+  } else {
+    content = buffer.toString("utf8");
+  }
+
   const lines = content.split(/\n/);
   const parsed = [];
+  let dshHeader = null;
   for (let index = 0; index < lines.length; index += 1) {
     const sequence = index + 1;
     const line = lines[index].endsWith("\r") ? lines[index].slice(0, -1) : lines[index];
     if (!line.trim()) continue;
+    let value;
     try {
-      parsed.push({ sequence, envelope: JSON.parse(line) });
+      value = JSON.parse(line);
     } catch {
       diagnostics.push({
         kind: "malformed-jsonl",
@@ -786,19 +1061,40 @@ export function readRecords(source, timezone, maxText) {
         line: sequence,
         error: "invalid JSON",
       });
+      continue;
     }
+    if (host === "dsh") {
+      if (dshHeader === null) {
+        if (value?.type === "session" && typeof value.id === "string") {
+          dshHeader = { sessionId: value.id, cwd: typeof value.cwd === "string" ? value.cwd : null };
+          continue;
+        }
+        diagnostics.push({ kind: "dsh-missing-header", path: source.path, line: sequence });
+        return [records, diagnostics];
+      }
+      if (DSH_CHUNK_ROW_TYPES.has(value?.type)) continue;
+    }
+    parsed.push({ sequence, envelope: value });
+  }
+  if (host === "dsh" && dshHeader === null && content.trim().length === 0) {
+    diagnostics.push({ kind: "dsh-empty", path: source.path });
+    return [records, diagnostics];
   }
 
-  const host = source.host || "claude";
   const rawEnvelopes = parsed.map((item) => item.envelope);
   const metadata = host === "codex" ? codexMetadata(rawEnvelopes, source.path) : null;
   const responseMessages = host === "codex" ? codexResponseMessages(rawEnvelopes) : [];
   for (const item of parsed) {
     const raw = item.envelope;
-    const envelope = host === "codex"
-      ? normalizeCodexEnvelope(raw, item.sequence, metadata, responseMessages)
-      : raw;
-    const timestampUtc = parseTimestamp(raw.timestamp);
+    let envelope;
+    if (host === "codex") {
+      envelope = normalizeCodexEnvelope(raw, item.sequence, metadata, responseMessages);
+    } else if (host === "dsh") {
+      envelope = normalizeDshEnvelope(raw, item.sequence, dshHeader);
+    } else {
+      envelope = raw;
+    }
+    const timestampUtc = host === "dsh" ? dshTimestamp(raw) : parseTimestamp(raw.timestamp);
     records.push({
       source: { ...source, host },
       sequence: item.sequence,
@@ -843,6 +1139,17 @@ export function classifyCommand(command) {
 
 export function classifyTool(name, toolInput) {
   const normalizedName = String(name || "").toLowerCase();
+  // DeepSeek Harness tools: the model calls run_code, which dispatches the real
+  // sub-tools (read/write/edit/pwsh/...) as tool/code-dispatch events.
+  if (new Set(["read", "glob", "grep", "read_image", "find_dsh_plugin"]).has(normalizedName)) return "read";
+  if (normalizedName === "write") return "file_write";
+  if (normalizedName === "edit") return "file_edit";
+  if (normalizedName === "pwsh") return classifyCommand(String(toolInput.command || ""));
+  if (normalizedName === "todo_write") return "task_tracking";
+  if (normalizedName === "ask_user_question") return "question";
+  if (normalizedName === "skill") return "skill_control";
+  if (new Set(["subagent", "subagent_fork", "workflow", "ralph"]).has(normalizedName)) return "delegation";
+  if (normalizedName === "run_code") return "other";
   if (new Set(["Read", "Glob", "Grep", "LSP", "ListMcpResourcesTool", "ReadMcpResourceTool"]).has(name)) return "read";
   if (name === "Write") return "file_write";
   if (new Set(["Edit", "NotebookEdit"]).has(name) || normalizedName.includes("apply_patch")) return "file_edit";
@@ -1609,6 +1916,7 @@ export function parseArgs(argv) {
     claude_projects_root: [],
     claude_session_root: [],
     codex_sessions_root: [],
+    dsh_sessions_root: [],
     scope: "development",
     output: null,
     force: false,
@@ -1638,6 +1946,10 @@ export function parseArgs(argv) {
       let value;
       [value, index] = optionValue(argv, index, "--codex-sessions-root");
       args.codex_sessions_root.push(value);
+    } else if (option === "--dsh-sessions-root") {
+      let value;
+      [value, index] = optionValue(argv, index, "--dsh-sessions-root");
+      args.dsh_sessions_root.push(value);
     } else if (option === "--scope") {
       [args.scope, index] = optionValue(argv, index, "--scope");
       if (!new Set(["development", "all"]).has(args.scope)) {
@@ -1670,6 +1982,7 @@ function printCliError(message) {
   process.stderr.write("usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]\n");
   process.stderr.write("                         [--claude-projects-root ROOT | --claude-session-root ROOT]\n");
   process.stderr.write("                         [--codex-sessions-root ROOT]\n");
+  process.stderr.write("                         [--dsh-sessions-root ROOT]\n");
   process.stderr.write("                         [--scope {development,all}]\n");
   process.stderr.write("                         [--output OUTPUT] [--force]\n");
   process.stderr.write("                         [--max-text-chars MAX_TEXT_CHARS]\n");
@@ -1690,6 +2003,7 @@ export function main(argv = process.argv.slice(2)) {
       args.claude_projects_root,
       args.claude_session_root,
       args.codex_sessions_root,
+      args.dsh_sessions_root,
     );
     const document = buildDocument(
       sources,
@@ -1726,6 +2040,7 @@ export {
   isDevelopmentText as is_development_text,
   iterContentBlocks as iter_content_blocks,
   jsonSha256 as json_sha256,
+  normalizeDshEnvelope as normalize_dsh_envelope,
   normalizePath as normalize_path,
   parseCommit as parse_commit,
   parseDate as parse_date,
@@ -1734,6 +2049,8 @@ export {
   projectIndex as project_index,
   readRecords as read_records,
   recordInDate as record_in_date,
+  scanZstdFrames as scan_zstd_frames,
+  dshTimestamp as dsh_timestamp,
   resolveTimezone as resolve_timezone,
   resultStatus as result_status,
   sanitizeText as sanitize_text,

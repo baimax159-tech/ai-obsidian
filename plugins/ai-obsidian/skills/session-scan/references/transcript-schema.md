@@ -1,4 +1,4 @@
-# 双宿主会话记录结构
+# 多宿主会话记录结构
 
 本参考定义 `scripts/scan_sessions.mjs` 的确定性解析契约。扫描器只提取证据，不判断业务任务是否真正完成。输出 schema 为 `session-scan/v2`。
 
@@ -22,19 +22,28 @@
 
 递归发现 Codex sessions root 下的 JSONL。默认不读取 `~/.codex/archived_sessions`；用户可将其他目录显式作为 `--codex-sessions-root`。
 
-默认调用同时尝试两个宿主目录；缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
+### DeepSeek Harness
+
+```text
+~/.dsh/sessions/<project-dir>/<session-dir>/session.jsonl[.zstd]
+```
+
+只在 project 目录下直接、仅按固定文件名 `session.jsonl` 或 `session.jsonl.zstd` 发现会话文件。`session.jsonl.zstd` 是标准 Zstandard 帧拼接（首帧只含 header 行，其后为追加帧）；读取时逐帧解压后合并为逻辑 JSONL。一个 root 只属于一种编码，发现时优先识别 `.jsonl.zstd`，否则回落到 `.jsonl`。
+
+默认调用同时尝试三个宿主目录；缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
 
 ## 会话标识
 
 - Claude Code：使用 envelope 顶层 `sessionId`。
 - Codex：优先使用重复 `session_meta.payload.session_id`，其次 `payload.id`，最后使用文件名中的 UUID。
+- DeepSeek Harness：使用 header 行顶层 `id`。
 - 分组键为 `session_key = <host>:<session_id>`，不能只按裸 session ID 合并。
-- 每个 source 与 session 都保留 `host: claude | codex`。
+- 每个 source 与 session 都保留 `host: claude | codex | dsh`。
 - 使用 JSONL 行序保持单文件因果关系，不按 timestamp 重排。
 
 ## 本地日期
 
-将每条 ISO 8601 `timestamp` 转到指定时区，再比较本地日期。不要使用 UTC 日期、文件修改日期或会话开始日期代替逐条筛选。
+将每条 ISO 8601 `timestamp` 转到指定时区，再比较本地日期；DeepSeek Harness 的 `time` 是整数毫秒 Unix epoch，直接当作 UTC 时刻转换。不要使用 UTC 日期、文件修改日期或会话开始日期代替逐条筛选。
 
 ## Claude Code 适配
 
@@ -91,6 +100,34 @@ Codex envelope 形如：
 ### Patch
 
 `event_msg/patch_apply_end` 通过 `call_id` 与 custom call 关联。以 `success/status` 判定结果，按 `changes` map 生成文件修改证据；不能仅依赖 custom call 的 completed 状态。
+
+## DeepSeek Harness 适配
+
+DeepSeek Harness envelope 形如：
+
+```json
+{"type":"...","seq":0,"time":1787054391074,"data":{}}
+```
+
+`time` 是整数毫秒 Unix epoch。第一条逻辑行是 header：`{ "type": "session", "version", "id", "createdAt", "cwd", "delegationDepth" }`；header 的 `id` 是会话 ID，`cwd` 是项目归属。子代理会话用 `origin`、`parentSession`、`delegationDepth` 标记，作为普通会话读取。
+
+### 消息与思考
+
+- `user/message` 且 `data.source.kind === "user"` 是真实用户消息，`data.id` 作为 uuid。
+- `assistant/message` 是可见 Assistant 消息；`data.message.content` 中的 `reasoning` 块映射为 thinking（只计数不输出），`tool-call` 块忽略（工具调用来自独立事件）。
+- `assistant/chunk` 及打包行（`text-chunks`/`reasoning-chunks`/`tool-call-chunks`）是流式增量，与 `assistant/message` 重复，读取时跳过不重建。
+- `agent/inbox/spliced`、`request/header`、`request/context`、`approval/*`、`permission/preset`、`sandbox/mode`、`turn/*`、`step/*` 等为元数据，不生成用户或 Assistant 消息。
+
+### 工具与 run_code 派发
+
+- 顶层 `tool/call` 的 `name` 恒为 `run_code`（DSH 只暴露一个直接工具）；其 `arguments` 是 JSON 字符串，仅保留 `description`。`tool/result` 通过 `data.message.source.callId` 关联。
+- 真实子工具来自 `tool/code-dispatch-start`（调用）与 `tool/code-dispatch`（结果），以 `subCallId` 配对；二者都携带 `name`、`arguments`（已是对象），结果额外带 `isError` 与 `content`。
+- 子工具名映射到扫描器工具类别：`read/glob/grep/read_image/find_dsh_plugin` → read，`write` → file_write，`edit` → file_edit，`pwsh` → 按 `command` 归类为 shell/test/commit，`todo_write` → task_tracking，`ask_user_question` → question，`subagent/subagent_fork/workflow/ralph` → delegation，`skill` → skill_control，`run_code` → other。
+
+### Zstandard 编码
+
+- 每个 `.jsonl.zstd` 是标准 Zstandard 帧拼接，首帧只含 header 行。读取时按帧魔数 `0xFD2FB528` 切分后逐帧 `zstdDecompressSync` 解压。
+- Node 运行时缺少 `node:zlib` 的 zstd 支持时，跳过该文件并报告 `dsh-zstd-unavailable`；未压缩的 `session.jsonl` 不受影响。
 
 ## 结果状态
 

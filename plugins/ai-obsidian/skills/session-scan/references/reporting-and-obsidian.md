@@ -30,7 +30,7 @@
 3. Shell 的 `cwd/workdir`；
 4. Claude project slug fallback。
 
-同一会话可涉及多个项目。普通依赖查阅不要误判为操作该项目。双宿主关联使用 `session_key`，不要用裸 session ID。
+同一会话可涉及多个项目。普通依赖查阅不要误判为操作该项目。多宿主关联使用 `session_key`，不要用裸 session ID。
 
 ## 当前状态核验
 

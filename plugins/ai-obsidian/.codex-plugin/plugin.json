@@ -1,7 +1,7 @@
 {
   "name": "ai-obsidian",
-  "version": "3.0.1",
-  "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex session scanning",
+  "version": "3.1.0",
+  "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex/DeepSeek Harness session scanning",
   "author": {
     "name": "baimax",
     "email": "baimax159@gmail.com"
@@ -18,13 +18,14 @@
     "research",
     "claude-code",
     "codex",
+    "deepseek-harness",
     "session-scan"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Forge Obsidian",
     "shortDescription": "Manage Obsidian work and scan coding sessions.",
-    "longDescription": "Obsidian skills for vault initialization, Markdown task management, work reports, open-source research, and evidence-based Claude Code/Codex session scanning.",
+    "longDescription": "Obsidian skills for vault initialization, Markdown task management, work reports, open-source research, and evidence-based Claude Code/Codex/DeepSeek Harness session scanning.",
     "developerName": "Max Bai",
     "category": "Productivity",
     "capabilities": [
@@ -33,7 +34,7 @@
     "defaultPrompt": [
       "Set up this folder as an Obsidian work vault.",
       "Create a work report from this project's Obsidian tasks.",
-      "Scan yesterday's Claude Code and Codex sessions and summarize the work evidence."
+      "Scan yesterday's Claude Code, Codex and DeepSeek Harness sessions and summarize the work evidence."
     ]
   }
 }
