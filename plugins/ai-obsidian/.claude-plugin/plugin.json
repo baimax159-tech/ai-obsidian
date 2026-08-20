@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai-obsidian",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex/DeepSeek Harness session scanning",
   "author": {
     "name": "baimax",
