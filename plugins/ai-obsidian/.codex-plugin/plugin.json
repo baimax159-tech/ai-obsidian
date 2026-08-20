@@ -1,6 +1,6 @@
 {
   "name": "ai-obsidian",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Obsidian workflow toolkit for vault setup, task management, reporting, research, and Claude Code/Codex/DeepSeek Harness session scanning",
   "author": {
     "name": "baimax",
