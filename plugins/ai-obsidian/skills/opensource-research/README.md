@@ -13,7 +13,7 @@
 - 选型信号：成本与锁定（license 商用限制、退出成本）、安全与供应链（遥测/隐私默认、依赖面、CLI/hook 信任边界）
 - 同类对比：GitHub star 倒序 Top5，含 1 个近一年新兴项目名额（结构化信号捞取，不用单日榜单）
 - Obsidian callout 版式：速览 / 结论 / 选型用 callout 色块（`[!abstract]` / `[!success]` / `[!danger]` / `[!warning]` / `[!info]`），字段带 emoji 图标锚点、同类对比首列 🥇🥈🥉 名次徽章，全篇仅同类对比一张表
-- 配套 CSS snippet：`assets/调研样式.css` 靠 frontmatter `cssclasses: research-report` 只作用于调研报告（速览 hero 卡片 / 决策色条 / 斑马纹表），取色走主题变量、跟随明暗；生成报告时自动写入 vault 的 `.obsidian/snippets/` 并提示启用
+- 配套 CSS：调研报告版式由 `assets/research-report.css` 的 `research-report` 样式统一提供（速览 hero 卡片 / 决策色条 / 斑马纹表），取色走主题变量、跟随明暗；生成报告时幂等交付 `.obsidian/snippets/research-report.css` 并提示用户启用「research-report」片段
 
 ## 输出
 

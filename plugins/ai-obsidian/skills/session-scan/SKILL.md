@@ -1,17 +1,15 @@
 ---
 name: session-scan
-description: This skill should be used when the user asks to "扫描今天或昨天的 Claude Code/Codex/DeepSeek Harness 工作记录", "按日期总结编码会话", "查看某天操作了哪些项目", "从 Claude、Codex 或 DeepSeek Harness 会话整理诉求、决策、修改、测试和提交", "核对会话里的已完成和未完成事项", or explicitly asks to sync scanned results to Obsidian tasks through ai-obsidian:task-hub.
+description: This skill should be used when the user asks to "扫描今天或昨天的 Claude Code/Codex/DeepSeek Harness/pi 工作记录", "按日期总结编码会话", "查看某天操作了哪些项目", "从 Claude、Codex、DeepSeek Harness 或 pi 会话整理诉求、决策、修改、测试和提交", "核对会话里的已完成和未完成事项", or explicitly asks to sync scanned results to Obsidian tasks through ai-obsidian:task-hub.
 user-invocable: true
 allowed-tools: Read, Skill, AskUserQuestion
-compatibility: Requires Node.js 20+ with full ICU and read access to Claude Code, Codex or DeepSeek Harness transcript files. DeepSeek Harness .jsonl.zstd decoding needs a Node.js build with zstd support in node:zlib; raw .jsonl sessions read regardless.
+compatibility: Requires Node.js 20+ with full ICU and read access to Claude Code, Codex, DeepSeek Harness or pi transcript files.
 metadata:
   author: project
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
-# Session Scan
-
-从 Claude Code、Codex 与 DeepSeek Harness 的本地会话中提取指定日期的工作证据，按项目生成中文工作内容。严格区分“讨论过”“尝试过”“已落地”和“已验证完成”，不把模型声明或任务状态当成实现证据。
+从 Claude Code、Codex、DeepSeek Harness 与 pi 的本地会话中提取指定日期的工作证据，按项目生成中文工作内容。严格区分“讨论过”“尝试过”“已落地”和“已验证完成”，不把模型声明或任务状态当成实现证据。
 
 ## 工作流程
 
@@ -23,7 +21,7 @@ metadata:
 
 - 日期：默认当前本地日期；用户指定时使用指定值。
 - 时区：优先采用用户指定时区；Windows 缺 IANA tzdata 时使用固定偏移，如 `+08:00`。
-- 宿主：默认同时扫描本机存在的 Claude Code、Codex 与 DeepSeek Harness 会话目录。
+- 宿主：默认同时扫描本机存在的 Claude Code、Codex、DeepSeek Harness 与 pi 会话目录。
 - 内容范围：默认 `development`，只保留开发相关会话；只有用户明确要求排查完整原始范围时才使用 `all`。
 - 输出：默认只在聊天中返回工作内容；只有用户明确要求保存原始证据时才使用 `--output`。
 
@@ -33,9 +31,10 @@ metadata:
 ~/.claude/projects
 ~/.codex/sessions
 ~/.dsh/sessions
+~/.pi/agent/sessions
 ```
 
-Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subagents/*.jsonl` 正文。Codex 递归读取 `sessions/YYYY/MM/DD/*.jsonl`；默认不扫描 `archived_sessions`。DeepSeek Harness 读取 `<dsh>/<project-dir>/<session-dir>/session.jsonl` 与 `session.jsonl.zstd`；zstd 文件运行时逐帧解码（需 `node:zlib` 提供 zstd），解码失败只报告诊断不中止。
+Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subagents/*.jsonl` 正文。Codex 递归读取 `sessions/YYYY/MM/DD/*.jsonl`；默认不扫描 `archived_sessions`。DeepSeek Harness 读取 `<dsh>/<project-dir>/<session-dir>/session.jsonl` 与 `session.jsonl.zstd`；zstd 文件运行时逐帧解码（需 `node:zlib` 提供 zstd），解码失败只报告诊断不中止。pi 递归读取配置 session root 下的 `*.jsonl`，优先使用 `--pi-sessions-root`、`PI_CODING_AGENT_SESSION_DIR` 或 `PI_CODING_AGENT_DIR/sessions`。
 
 不要用文件修改时间判断日期。逐条把 transcript `timestamp` 转为目标时区后筛选。
 
@@ -43,7 +42,7 @@ Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subage
 
 从宿主加载 Skill 时提供的 base directory 获取 `<skill-base-dir>`，不要假定当前工作目录就是 Skill 目录。Claude Code 使用 Skill 加载输出中的 `Base directory for this skill`；Codex 使用已安装插件中的 `skills/session-scan` 目录。无法可靠确定时停止并要求提供插件安装路径，不猜测路径。
 
-执行默认三宿主扫描：
+执行默认四宿主扫描：
 
 ```bash
 node "<skill-base-dir>/scripts/scan_sessions.mjs" \
@@ -61,10 +60,11 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
   --scope development \
   --claude-projects-root "<claude-projects-root>" \
   --codex-sessions-root "<codex-sessions-root>" \
-  --dsh-sessions-root "<dsh-sessions-root>"
+  --dsh-sessions-root "<dsh-sessions-root>" \
+  --pi-sessions-root "<pi-sessions-root>"
 ```
 
-单个 Claude project transcript 目录使用 `--claude-session-root`。兼容别名 `--projects-root`、`--session-root` 仍表示 Claude Code 路径。DeepSeek Harness 会话根目录使用 `--dsh-sessions-root`（通常为 `~/.dsh/sessions`，可重复指定）。
+单个 Claude project transcript 目录使用 `--claude-session-root`。兼容别名 `--projects-root`、`--session-root` 仍表示 Claude Code 路径。DeepSeek Harness 会话根目录使用 `--dsh-sessions-root`（通常为 `~/.dsh/sessions`，可重复指定）；pi 会话根目录使用 `--pi-sessions-root`（通常为 `~/.pi/agent/sessions`，可重复指定）。
 
 `--scope development` 是默认值。它根据源码/开发配置路径、文件修改、测试/构建、Git、开发命令和明确开发语义保留会话。`--scope all` 只用于用户明确要求的全量排查，不作为日常工作总结口径。
 
@@ -101,11 +101,11 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
 5. Assistant 可见结论；
 6. 任务跟踪状态。
 
-使用 `session_key`（`claude:<id>` / `codex:<id>` / `dsh:<id>`）区分宿主，避免相同 session ID 被合并。将同一主题的多轮追问合并为一个工作主线，后续明确决策覆盖早期方案。
+使用 `session_key`（`claude:<id>` / `codex:<id>` / `dsh:<id>` / `pi:<id>`）区分宿主，避免相同 session ID 被合并。将同一主题的多轮追问合并为一个工作主线，后续明确决策覆盖早期方案。
 
 只归纳开发相关工作主题。同一会话若混入生活问答、通用写作、旅行规划、媒体生成等非开发话题，跳过这些话题，不要因为会话整体已命中开发范围就一并输出。
 
-不要把 system/developer 注入、tool result、Skill 正文、task notification、local command 输出、子代理 prompt 或 Codex 的重复 `event_msg` 算作用户沟通。不要输出 Claude thinking 或 Codex reasoning 内容。
+不要把 system/developer 注入、tool result、Skill 正文、task notification、local command 输出、子代理 prompt 或 Codex 的重复 `event_msg` 算作用户沟通。不要输出 Claude thinking、Codex reasoning 或 pi thinking 内容。
 
 ## 步骤 5：判定证据等级
 
@@ -155,7 +155,7 @@ git log --since="<start>" --until="<end>" --oneline
 
 默认不与任务管理联动。仅在当前真实用户回合明确要求“写入 Obsidian”“同步今日任务”等操作时：
 
-1. 将报告压缩为项目、父任务、完成项、进行中项、阻塞项、日期和证据摘要。
+1. 将报告按「工作主线」压缩为项目、父任务候选、子任务项（状态 + 日期）和证据摘要；同一模块/目标的多个事项归为同一父任务，单一事项作叶子任务、不套父壳。
 2. Claude Code 使用 `Skill` 调用 `ai-obsidian:task-hub`。Codex 能调用已安装技能时调用同一 `task-hub`；不能调用时仅输出结构化 handoff，需要补字段时使用 Codex 原生文本交互，不直接猜测。
 3. 让 `task-hub` 扫描项目分区、定位任务、确认缺失字段，并按其自身格式契约写入。
 4. Skill 调用不可用时只返回 handoff 内容，明确说明未写入。
@@ -166,7 +166,7 @@ git log --since="<start>" --until="<end>" --oneline
 
 | 场景 | 处理 |
 | --- | --- |
-| 默认宿主目录不存在 | 跳过该宿主；两个目录都不存在时报告未发现 source |
+| 默认宿主目录不存在 | 跳过该宿主；所有默认目录都不存在时报告未发现 source |
 | 显式目录不存在 | 停止并报告具体路径错误 |
 | 扫描结果为空 | 核对时区、目录、跨日和追加状态，不断言无工作 |
 | 输出文件已存在 | 停止并确认覆盖授权；明确同意后才使用 `--force` |
@@ -176,7 +176,7 @@ git log --since="<start>" --until="<end>" --oneline
 
 ## 资源
 
-- [`scripts/scan_sessions.mjs`](scripts/scan_sessions.mjs)：Claude Code/Codex/DeepSeek Harness 只读扫描器，输出 `session-scan/v2` 证据 JSON。
-- [`references/transcript-schema.md`](references/transcript-schema.md)：三宿主目录、规范化、关联和去重规则。
+- [`scripts/scan_sessions.mjs`](scripts/scan_sessions.mjs)：Claude Code/Codex/DeepSeek Harness/pi 只读扫描器，输出 `session-scan/v2` 证据 JSON。
+- [`references/transcript-schema.md`](references/transcript-schema.md)：四宿主目录、规范化、关联和去重规则。
 - [`references/reporting-and-obsidian.md`](references/reporting-and-obsidian.md)：证据等级、中文报告和 `task-hub` handoff 规则。
 - 源仓库开发测试（不随插件发布）：`tests/ai-obsidian/session-scan.test.mjs`。

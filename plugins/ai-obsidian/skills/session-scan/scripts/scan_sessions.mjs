@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Read Claude Code and Codex transcripts and emit evidence-oriented JSON. */
+/** Read Claude Code, Codex, DeepSeek Harness and pi transcripts and emit evidence-oriented JSON. */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -16,6 +16,7 @@ export const DSH_SESSION_ZSTD_FILE = "session.jsonl.zstd";
 export const DSH_CHUNK_ROW_TYPES = new Set(["text-chunks", "reasoning-chunks", "tool-call-chunks"]);
 export const DSH_ZSTD_MAGIC = 4247762216; // 0xFD2FB528 little-endian
 export const DSH_HAS_ZSTD = typeof zlib.zstdDecompressSync === "function";
+export const PI_DEFAULT_SESSION_DIR = [".pi", "agent", "sessions"];
 export const SENSITIVE_KEY = /(?:token|secret|password|authorization|cookie|credential|api[_-]?key|private[_-]?key)/i;
 export const FIXED_OFFSET = /^([+-])(\d{2}):(\d{2})$/;
 export const TEXT_REDACTIONS = [
@@ -121,11 +122,12 @@ const HELP = `usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAM
                          [--claude-projects-root ROOT | --claude-session-root ROOT]
                          [--codex-sessions-root ROOT]
                          [--dsh-sessions-root ROOT]
+                         [--pi-sessions-root ROOT]
                          [--scope {development,all}]
                          [--output OUTPUT] [--force]
                          [--max-text-chars MAX_TEXT_CHARS]
 
-Scan Claude Code, Codex and DeepSeek Harness transcripts for work evidence.
+Scan Claude Code, Codex, DeepSeek Harness and pi transcripts for work evidence.
 
 options:
   -h, --help            show this help message and exit
@@ -142,6 +144,9 @@ options:
   --dsh-sessions-root ROOT
                         DeepSeek Harness sessions root (usually ~/.dsh/sessions);
                         repeatable
+  --pi-sessions-root ROOT
+                        pi sessions root (usually ~/.pi/agent/sessions);
+                        repeatable
   --scope {development,all}
                         Scan development-related sessions only (default), or
                         retain all matched sessions
@@ -154,7 +159,7 @@ options:
 
 export function buildParser() {
   return {
-    description: "Scan Claude Code, Codex and DeepSeek Harness transcripts for work evidence.",
+    description: "Scan Claude Code, Codex, DeepSeek Harness and pi transcripts for work evidence.",
     help: HELP,
     parseArgs,
   };
@@ -301,19 +306,42 @@ function discoverDshFiles(discovered, root) {
   }
 }
 
-export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots, dshSessionsRoots) {
+function discoverPiFiles(discovered, root) {
+  // pi stores project-scoped session JSONL files below the configured session root.
+  function visit(directory) {
+    for (const entry of sortedDirectoryEntries(directory)) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(candidate);
+      else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        addTranscript(discovered, candidate, {
+          host: "pi",
+          sessionRoot: root,
+          sourceKind: "pi-sessions-root",
+        });
+      }
+    }
+  }
+  visit(root);
+}
+
+export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots, dshSessionsRoots, piSessionsRoots) {
   const discovered = new Map();
   const noExplicitRoots = (!projectsRoots || projectsRoots.length === 0)
     && (!sessionRoots || sessionRoots.length === 0)
     && (!codexSessionsRoots || codexSessionsRoots.length === 0)
-    && (!dshSessionsRoots || dshSessionsRoots.length === 0);
+    && (!dshSessionsRoots || dshSessionsRoots.length === 0)
+    && (!piSessionsRoots || piSessionsRoots.length === 0);
   if (noExplicitRoots) {
     const defaultClaudeRoot = path.join(os.homedir(), ".claude", "projects");
     const defaultCodexRoot = path.join(os.homedir(), ".codex", "sessions");
     const defaultDshRoot = path.join(os.homedir(), ".dsh", "sessions");
+    const configuredPiRoot = process.env.PI_CODING_AGENT_SESSION_DIR
+      || (process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions") : null);
+    const defaultPiRoot = configuredPiRoot || path.join(os.homedir(), ...PI_DEFAULT_SESSION_DIR);
     projectsRoots = fs.existsSync(defaultClaudeRoot) ? [defaultClaudeRoot] : [];
     codexSessionsRoots = fs.existsSync(defaultCodexRoot) ? [defaultCodexRoot] : [];
     dshSessionsRoots = fs.existsSync(defaultDshRoot) ? [defaultDshRoot] : [];
+    piSessionsRoots = fs.existsSync(defaultPiRoot) ? [defaultPiRoot] : [];
   }
 
   const claudeRoots = [];
@@ -360,6 +388,14 @@ export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRo
       throw new Error(`DSH sessions root does not exist: ${rootValue}`);
     }
     discoverDshFiles(discovered, root);
+  }
+
+  for (const rootValue of piSessionsRoots || []) {
+    const root = expandUser(String(rootValue));
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+      throw new Error(`pi sessions root does not exist: ${rootValue}`);
+    }
+    discoverPiFiles(discovered, root);
   }
 
   return [...discovered.keys()].sort().map((key) => discovered.get(key));
@@ -1004,6 +1040,94 @@ export function normalizeDshEnvelope(raw, sequence, meta) {
   return { type: "dsh_metadata", ...common };
 }
 
+function normalizePiContent(content) {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  if (!Array.isArray(content)) return [];
+  return content.filter(isMapping).flatMap((block) => {
+    if (block.type === "text") return [{ type: "text", text: String(block.text || "") }];
+    if (block.type === "thinking" || block.type === "reasoning") return [{ type: "thinking" }];
+    if (block.type === "toolCall" || block.type === "tool_call") {
+      return [{
+        type: "tool_use",
+        id: String(block.id || block.toolCallId || "pi-call-unknown"),
+        name: String(block.name || "tool"),
+        input: isMapping(block.arguments) ? block.arguments : parseJsonObject(block.arguments),
+      }];
+    }
+    return [];
+  });
+}
+
+export function normalizePiEnvelope(raw, sequence, metadata) {
+  const common = { sessionId: metadata.sessionId, cwd: metadata.cwd };
+  if (raw?.type === "session") return { type: "pi_metadata", ...common };
+  if (raw?.type === "message" && isMapping(raw.message)) {
+    const message = raw.message;
+    if (message.role === "user") {
+      return {
+        type: "user",
+        origin: { kind: "human" },
+        uuid: raw.id || `pi-user-${sequence}`,
+        message: { role: "user", content: message.content },
+        ...common,
+      };
+    }
+    if (message.role === "assistant") {
+      return {
+        type: "assistant",
+        message: {
+          id: raw.id || `pi-assistant-${sequence}`,
+          role: "assistant",
+          content: normalizePiContent(message.content),
+          model: message.model,
+          stop_reason: message.stopReason || message.stop_reason,
+        },
+        ...common,
+      };
+    }
+    if (message.role === "toolResult") {
+      return {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: String(message.toolCallId || message.tool_call_id || `pi-result-${sequence}`),
+            content: extractText(message.content) || (typeof message.content === "string" ? message.content : ""),
+            is_error: message.isError === true || message.is_error === true,
+          }],
+        },
+        resultStatus: message.isError === true || message.is_error === true ? "error" : "success",
+        ...common,
+      };
+    }
+    if (message.role === "bashExecution") {
+      const callId = message.toolCallId || message.tool_call_id || `pi-bash-${sequence}`;
+      const output = typeof message.output === "string" ? message.output : extractText(message.content);
+      return {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: String(callId), content: output, is_error: message.exitCode != null && message.exitCode !== 0 }],
+        },
+        toolUseResult: { exitCode: message.exitCode },
+        resultStatus: message.cancelled ? "unknown" : message.exitCode != null ? (message.exitCode === 0 ? "success" : "error") : "unknown",
+        ...common,
+      };
+    }
+  }
+  return { type: "pi_metadata", ...common };
+}
+
+function piMetadata(rawEnvelopes, sourcePath) {
+  const header = rawEnvelopes.find((item) => item?.type === "session");
+  const fallback = path.basename(sourcePath, ".jsonl").split("_").at(-1);
+  return {
+    sessionId: typeof header?.id === "string" && header.id ? header.id : fallback,
+    cwd: typeof header?.cwd === "string" ? header.cwd : null,
+  };
+}
+
 export function readRecords(source, timezone, maxText) {
   const records = [];
   const diagnostics = [];
@@ -1082,7 +1206,9 @@ export function readRecords(source, timezone, maxText) {
   }
 
   const rawEnvelopes = parsed.map((item) => item.envelope);
-  const metadata = host === "codex" ? codexMetadata(rawEnvelopes, source.path) : null;
+  const metadata = host === "codex"
+    ? codexMetadata(rawEnvelopes, source.path)
+    : host === "pi" ? piMetadata(rawEnvelopes, source.path) : null;
   const responseMessages = host === "codex" ? codexResponseMessages(rawEnvelopes) : [];
   for (const item of parsed) {
     const raw = item.envelope;
@@ -1091,10 +1217,14 @@ export function readRecords(source, timezone, maxText) {
       envelope = normalizeCodexEnvelope(raw, item.sequence, metadata, responseMessages);
     } else if (host === "dsh") {
       envelope = normalizeDshEnvelope(raw, item.sequence, dshHeader);
+    } else if (host === "pi") {
+      envelope = normalizePiEnvelope(raw, item.sequence, metadata);
     } else {
       envelope = raw;
     }
-    const timestampUtc = host === "dsh" ? dshTimestamp(raw) : parseTimestamp(raw.timestamp);
+    const timestampUtc = host === "dsh"
+      ? dshTimestamp(raw)
+      : parseTimestamp(raw.timestamp || raw.message?.timestamp || raw.createdAt);
     records.push({
       source: { ...source, host },
       sequence: item.sequence,
@@ -1140,7 +1270,9 @@ export function classifyCommand(command) {
 export function classifyTool(name, toolInput) {
   const normalizedName = String(name || "").toLowerCase();
   // DeepSeek Harness tools: the model calls run_code, which dispatches the real
-  // sub-tools (read/write/edit/pwsh/...) as tool/code-dispatch events.
+  // sub-tools (read/write/edit/pwsh/...) as tool/code-dispatch events. pi tools
+  // use lowercase native names (bash/read/write/edit/...).
+  if (normalizedName === "bash" || normalizedName === "shell") return classifyCommand(String(toolInput.command || toolInput.cmd || ""));
   if (new Set(["read", "glob", "grep", "read_image", "find_dsh_plugin"]).has(normalizedName)) return "read";
   if (normalizedName === "write") return "file_write";
   if (normalizedName === "edit") return "file_edit";
@@ -1155,7 +1287,7 @@ export function classifyTool(name, toolInput) {
   if (new Set(["Edit", "NotebookEdit"]).has(name) || normalizedName.includes("apply_patch")) return "file_edit";
   if (new Set(["Bash", "PowerShell"]).has(name)) return classifyCommand(String(toolInput.command || ""));
   if (new Set(["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]).has(name)) return "task_tracking";
-  if (name === "AskUserQuestion" || normalizedName === "request_user_input") return "question";
+  if (name === "AskUserQuestion" || normalizedName === "ask_user_input" || normalizedName === "request_user_input") return "question";
   if (name === "Skill") return "skill_control";
   if (new Set(["Agent", "Workflow"]).has(name)
     || /(?:spawn|delegate|task|agent|send_input)/.test(normalizedName)) return "delegation";
@@ -1917,6 +2049,7 @@ export function parseArgs(argv) {
     claude_session_root: [],
     codex_sessions_root: [],
     dsh_sessions_root: [],
+    pi_sessions_root: [],
     scope: "development",
     output: null,
     force: false,
@@ -1950,6 +2083,10 @@ export function parseArgs(argv) {
       let value;
       [value, index] = optionValue(argv, index, "--dsh-sessions-root");
       args.dsh_sessions_root.push(value);
+    } else if (option === "--pi-sessions-root") {
+      let value;
+      [value, index] = optionValue(argv, index, "--pi-sessions-root");
+      args.pi_sessions_root.push(value);
     } else if (option === "--scope") {
       [args.scope, index] = optionValue(argv, index, "--scope");
       if (!new Set(["development", "all"]).has(args.scope)) {
@@ -1983,6 +2120,7 @@ function printCliError(message) {
   process.stderr.write("                         [--claude-projects-root ROOT | --claude-session-root ROOT]\n");
   process.stderr.write("                         [--codex-sessions-root ROOT]\n");
   process.stderr.write("                         [--dsh-sessions-root ROOT]\n");
+  process.stderr.write("                         [--pi-sessions-root ROOT]\n");
   process.stderr.write("                         [--scope {development,all}]\n");
   process.stderr.write("                         [--output OUTPUT] [--force]\n");
   process.stderr.write("                         [--max-text-chars MAX_TEXT_CHARS]\n");
@@ -2004,6 +2142,7 @@ export function main(argv = process.argv.slice(2)) {
       args.claude_session_root,
       args.codex_sessions_root,
       args.dsh_sessions_root,
+      args.pi_sessions_root,
     );
     const document = buildDocument(
       sources,
@@ -2040,7 +2179,8 @@ export {
   isDevelopmentText as is_development_text,
   iterContentBlocks as iter_content_blocks,
   jsonSha256 as json_sha256,
-  normalizeDshEnvelope as normalize_dsh_envelope,
+  normalizePiEnvelope as normalize_pi_envelope,
+  piMetadata as pi_metadata,
   normalizePath as normalize_path,
   parseCommit as parse_commit,
   parseDate as parse_date,

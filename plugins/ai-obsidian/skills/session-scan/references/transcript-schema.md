@@ -30,15 +30,16 @@
 
 只在 project 目录下直接、仅按固定文件名 `session.jsonl` 或 `session.jsonl.zstd` 发现会话文件。`session.jsonl.zstd` 是标准 Zstandard 帧拼接（首帧只含 header 行，其后为追加帧）；读取时逐帧解压后合并为逻辑 JSONL。一个 root 只属于一种编码，发现时优先识别 `.jsonl.zstd`，否则回落到 `.jsonl`。
 
-默认调用同时尝试三个宿主目录；缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
+默认调用同时尝试四个宿主目录；缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
 
 ## 会话标识
 
 - Claude Code：使用 envelope 顶层 `sessionId`。
 - Codex：优先使用重复 `session_meta.payload.session_id`，其次 `payload.id`，最后使用文件名中的 UUID。
 - DeepSeek Harness：使用 header 行顶层 `id`。
+- pi：使用 session header 行顶层 `id`，默认目录为 `~/.pi/agent/sessions/`，可由 `PI_CODING_AGENT_SESSION_DIR`、`PI_CODING_AGENT_DIR/sessions` 或 `--pi-sessions-root` 覆盖。
 - 分组键为 `session_key = <host>:<session_id>`，不能只按裸 session ID 合并。
-- 每个 source 与 session 都保留 `host: claude | codex | dsh`。
+- 每个 source 与 session 都保留 `host: claude | codex | dsh | pi`。
 - 使用 JSONL 行序保持单文件因果关系，不按 timestamp 重排。
 
 ## 本地日期
@@ -129,6 +130,18 @@ DeepSeek Harness envelope 形如：
 - 每个 `.jsonl.zstd` 是标准 Zstandard 帧拼接，首帧只含 header 行。读取时按帧魔数 `0xFD2FB528` 切分后逐帧 `zstdDecompressSync` 解压。
 - Node 运行时缺少 `node:zlib` 的 zstd 支持时，跳过该文件并报告 `dsh-zstd-unavailable`；未压缩的 `session.jsonl` 不受影响。
 
+## pi 适配
+
+pi session 文件是 JSONL，首行 header 为 `{ "type": "session", "version", "id", "timestamp", "cwd" }`。后续 `message` 行携带 `id`、`timestamp` 和 `message`，`message.role` 可以是 `user`、`assistant`、`toolResult` 或 `bashExecution`。
+
+- `role: user` → 真实用户消息；`role: assistant` → 可见 Assistant 消息，其中 `text` 块拼接到 `assistant_visible_messages`，`thinking`/`reasoning` 只计数不输出。
+- assistant content 中的 `toolCall` 块映射为 `tool_use`，以块 `id` 与 `toolResult.message.toolCallId` 配对；`toolResult.isError` 映射为错误状态。
+- `bashExecution` 作为独立结果，带 `toolCallId`、`output`、`exitCode`、`cancelled`；非零 exit code 标记 error，cancelled 标记 unknown。
+- header 顶点 `id` 是会话 ID，`cwd` 是项目归属；header 之外的文件名 UUID 仅作 fallback。
+- 未知 entry type、未知 version 不崩溃，只作为 metadata 忽略；scanner 从不写回 session 文件。
+
+pi 是会话来源，不是插件 OSS 宿主；仓库仍以 Claude Code 与 Codex 为发布目标。
+
 ## 结果状态
 
 - `success`：结构化状态明确成功，或输出明确显示 exit code 0。
@@ -143,7 +156,7 @@ DeepSeek Harness envelope 形如：
 
 优先使用目标日期内的 session cwd，再使用工具 input 中的 `cwd/workdir`。Claude project slug 只作 fallback。外部文件修改进入 `external_path_evidence`，不自动创建新项目。
 
-项目索引使用 `session_keys` 表达双宿主会话；`session_ids` 仅作兼容信息。
+项目索引使用 `session_keys` 表达多宿主会话；`session_ids` 仅作兼容信息。
 
 ## 开发范围过滤
 

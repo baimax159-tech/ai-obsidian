@@ -40,7 +40,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 
 ### 创建
 
-写入 `任务/{YYYY}/计划中.md`。新任务使用 task-hub 规范；大目标可建议拆成父任务和可执行子任务。复制 `task-templates.md` 对应骨架，逐字段替换，不手写近似格式。
+写入 `任务/{YYYY}/计划中.md`。新任务使用 task-hub 规范；按「同一模块/目标」归组为父任务 + 子任务，单一事项作叶子任务、不套父壳（见 `task-format.md`「任务划分」）。复制 `task-templates.md` 对应骨架，逐字段替换，不手写近似格式。
 
 ### 查看
 
