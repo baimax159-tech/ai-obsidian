@@ -1,9 +1,7 @@
 ---
 name: session-scan
 description: This skill should be used when the user asks to "扫描今天或昨天的 Claude Code/Codex/DeepSeek Harness/pi 工作记录", "按日期总结编码会话", "查看某天操作了哪些项目", "从 Claude、Codex、DeepSeek Harness 或 pi 会话整理诉求、决策、修改、测试和提交", "核对会话里的已完成和未完成事项", or explicitly asks to sync scanned results to Obsidian tasks through ai-obsidian:task-hub.
-user-invocable: true
 allowed-tools: Read, Skill, AskUserQuestion
-compatibility: Requires Node.js 20+ with full ICU and read access to Claude Code, Codex, DeepSeek Harness or pi transcript files.
 metadata:
   author: project
   version: "0.5.1"
@@ -21,11 +19,11 @@ metadata:
 
 - 日期：默认当前本地日期；用户指定时使用指定值。
 - 时区：优先采用用户指定时区；Windows 缺 IANA tzdata 时使用固定偏移，如 `+08:00`。
-- 宿主：默认同时扫描本机存在的 Claude Code、Codex、DeepSeek Harness 与 pi 会话目录。
+- 宿主：默认只扫描 Codex；需要其他宿主时显式增加 `--host claude|dsh|pi`，避免多宿主重复证据污染任务归纳。
 - 内容范围：默认 `development`，只保留开发相关会话；只有用户明确要求排查完整原始范围时才使用 `all`。
 - 输出：默认只在聊天中返回工作内容；只有用户明确要求保存原始证据时才使用 `--output`。
 
-默认目录：
+默认目录（仅启用 Codex）：
 
 ```text
 ~/.claude/projects
@@ -42,13 +40,23 @@ Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subage
 
 从宿主加载 Skill 时提供的 base directory 获取 `<skill-base-dir>`，不要假定当前工作目录就是 Skill 目录。Claude Code 使用 Skill 加载输出中的 `Base directory for this skill`；Codex 使用已安装插件中的 `skills/session-scan` 目录。无法可靠确定时停止并要求提供插件安装路径，不猜测路径。
 
-执行默认四宿主扫描：
+执行默认 Codex 扫描：
 
 ```bash
 node "<skill-base-dir>/scripts/scan_sessions.mjs" \
   --date YYYY-MM-DD \
   --timezone +08:00 \
   --scope development
+```
+
+需要扩展宿主时显式指定，可重复：
+
+```bash
+node "<skill-base-dir>/scripts/scan_sessions.mjs" \
+  --date YYYY-MM-DD \
+  --timezone +08:00 \
+  --scope development \
+  --host codex --host claude
 ```
 
 限定宿主目录时可组合使用：
@@ -105,6 +113,8 @@ node "<skill-base-dir>/scripts/scan_sessions.mjs" \
 
 只归纳开发相关工作主题。同一会话若混入生活问答、通用写作、旅行规划、媒体生成等非开发话题，跳过这些话题，不要因为会话整体已命中开发范围就一并输出。
 
+研究、采购、硬件选型、生活和媒体能力清单只有同时出现明确开发动作（如修复、实现、部署、配置或测试）时才保留；Assistant 的研究性回答不能单独作为开发主题正文。
+
 不要把 system/developer 注入、tool result、Skill 正文、task notification、local command 输出、子代理 prompt 或 Codex 的重复 `event_msg` 算作用户沟通。不要输出 Claude thinking、Codex reasoning 或 pi thinking 内容。
 
 ## 步骤 5：判定证据等级
@@ -155,10 +165,10 @@ git log --since="<start>" --until="<end>" --oneline
 
 默认不与任务管理联动。仅在当前真实用户回合明确要求“写入 Obsidian”“同步今日任务”等操作时：
 
-1. 将报告按「工作主线」压缩为项目、父任务候选、子任务项（状态 + 日期）和证据摘要；同一模块/目标的多个事项归为同一父任务，单一事项作叶子任务、不套父壳。
-2. Claude Code 使用 `Skill` 调用 `ai-obsidian:task-hub`。Codex 能调用已安装技能时调用同一 `task-hub`；不能调用时仅输出结构化 handoff，需要补字段时使用 Codex 原生文本交互，不直接猜测。
+1. 先生成并校验 `session-scan/handoff/v1` 结构化交接；每条工作主线包含稳定 `workstream_id`、项目、标题、证据等级、状态、来源 session key、证据摘要和日期字段。缺失日期必须为 `null`。
+2. Claude Code 使用 `Skill` 调用 `ai-obsidian:task-hub`。Codex 能调用已安装技能时调用同一 `task-hub`；不能调用时仅输出并校验结构化 handoff，需要补字段时使用 Codex 原生文本交互，不直接猜测。
 3. 让 `task-hub` 扫描项目分区、定位任务、确认缺失字段，并按其自身格式契约写入。
-4. Skill 调用不可用时只返回 handoff 内容，明确说明未写入。
+4. Skill 调用不可用时只返回已校验的 handoff 内容，明确说明未写入。
 
 禁止扫描器或本 Skill 直接用 Edit/Write 修改 Obsidian 任务文件。不要自动归档，也不要自动调用报告生成；生成日报/周报等由 `task-hub` 在用户明确要求时处理。
 
@@ -166,7 +176,7 @@ git log --since="<start>" --until="<end>" --oneline
 
 | 场景 | 处理 |
 | --- | --- |
-| 默认宿主目录不存在 | 跳过该宿主；所有默认目录都不存在时报告未发现 source |
+| 默认宿主目录不存在 | 跳过该宿主；默认 Codex 目录不存在时报告未发现 source |
 | 显式目录不存在 | 停止并报告具体路径错误 |
 | 扫描结果为空 | 核对时区、目录、跨日和追加状态，不断言无工作 |
 | 输出文件已存在 | 停止并确认覆盖授权；明确同意后才使用 `--force` |
@@ -177,6 +187,8 @@ git log --since="<start>" --until="<end>" --oneline
 ## 资源
 
 - [`scripts/scan_sessions.mjs`](scripts/scan_sessions.mjs)：Claude Code/Codex/DeepSeek Harness/pi 只读扫描器，输出 `session-scan/v2` 证据 JSON。
+- [`scripts/handoff.mjs`](scripts/handoff.mjs)：把 `session-scan/v2` 证据转换并校验为 `session-scan/handoff/v1`（可用 `node scripts/handoff.mjs EVIDENCE.json`）。
 - [`references/transcript-schema.md`](references/transcript-schema.md)：四宿主目录、规范化、关联和去重规则。
+- [`references/handoff-schema.md`](references/handoff-schema.md)：任务交接字段、状态映射和日期缺失规则。
 - [`references/reporting-and-obsidian.md`](references/reporting-and-obsidian.md)：证据等级、中文报告和 `task-hub` handoff 规则。
 - 源仓库开发测试（不随插件发布）：`tests/ai-obsidian/session-scan.test.mjs`。

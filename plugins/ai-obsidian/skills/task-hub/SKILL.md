@@ -21,6 +21,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 - 修改状态、时间、标题、备注、优先级、项目或父子结构：读 `references/task-editing.md`。
 - 归档或恢复：读 `references/task-format.md` 与 `references/task-templates.md`。
 - 生成报告：读 `references/reporting.md`。
+- 接收 `session-scan` 任务交接：读插件内 `../session-scan/references/handoff-schema.md`，并先校验 `session-scan/handoff/v1`。
 - 批量转换旧任务格式：仅在用户明确要求迁移时读 `references/legacy-migration.md`。
 
 不要为普通查看或单条修改加载所有参考文件，也不要在普通操作中静默迁移整个任务库。
@@ -30,6 +31,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 - 默认根路径为当前项目；用户指定任务库路径时以用户路径为准。
 - 项目归属以 `## 项目名` 分区为准。涉及项目时先扫描现有分区；未知项目先确认是新建分区还是已有项目别名。
 - 新任务必填标题、项目、`🛫` 开始日期、`📅` 计划完成日期；缺失时不猜。
+- 来自 `session-scan` 的任务只接受已校验的结构化 handoff；自由文本扫描总结不能直接生成任务。
+- handoff 中日期为 `null` 时集中询问用户，未补齐前不写入；不得用扫描日期或当前日期代替计划完成日期。
 - 查看属于只读操作，不要求写入确认。
 - 修改已有任务、移动项目、改变结构、归档/恢复、替换报告和批量迁移前，回显精确目标与拟变更；确认后才写。
 - Claude Code 优先使用 `AskUserQuestion`；Codex 使用可用的原生确认方式；没有选择 UI 时使用简洁文本问题。
@@ -42,9 +45,23 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 
 写入 `任务/{YYYY}/计划中.md`。新任务使用 task-hub 规范；按「同一模块/目标」归组为父任务 + 子任务，单一事项作叶子任务、不套父壳（见 `task-format.md`「任务划分」）。复制 `task-templates.md` 对应骨架，逐字段替换，不手写近似格式。
 
+任务内容先按 `task-format.md`「任务内容写作」压缩：标题写单一可执行结果，背景、约束和证据写备注；不把长篇总结、状态或测试日志写进标题。类别容器不当作真实任务创建。
+
+### session-scan 交接
+
+接收扫描结果时只处理 `session-scan/handoff/v1`：
+
+1. 校验版本、项目、工作主线、证据等级、状态和日期字段；失败时只预览，不写入。
+2. 只把 `task_state` 为 `completed`、`in_progress` 或 `blocked` 的主线作为任务候选；`skip` 默认丢弃。
+3. 先按项目分区和 `workstream_id` 定位已有任务，再决定新增、合并或更新；不依据长篇总结另起任务。
+4. `start_date` 或 `planned_end_date` 为 `null` 时，按工作主线一次性询问，未补齐前不写入。
+5. 写入后重新读取整棵任务树，核对状态、日期、项目和父子层级。
+
 ### 查看
 
 支持按项目、状态、父任务、开始/计划/完成日期、今天、本周、任意日期范围、计划中/已归档和跨年范围筛选。保留父子层级，默认不把子任务打散。
+
+默认隐藏无日期的类别容器；用户要求查看分类结构时才显示，并标注其为组织容器而非任务。
 
 ### 修改
 
@@ -57,6 +74,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 ### 报告
 
 支持日、周、月、季度、半年、全年和任意起止日期工作总结。默认写入年度任务目录；用户明确要求聊天预览时不写文件。不得编造任务事实、完成日期、进度或指标。
+
+日报和周报按 `reporting.md` 的事实来源、项目归属和父子去重规则整理；不从标题相似度跨项目合并，也不把类别容器或自由文本总结当作报告条目。
 
 ### 旧格式兼容
 

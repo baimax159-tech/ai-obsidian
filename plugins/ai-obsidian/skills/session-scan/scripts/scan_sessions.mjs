@@ -51,11 +51,15 @@ export const NOISE_BLOCKS = [
   "local-command-caveat",
   "local-command-stdout",
   "task-notification",
+  "environment_context",
 ];
 export const NOISE_PREFIXES = [
   "Base directory for this skill:",
   "Skill /",
   "[Request interrupted by user",
+];
+export const INSTRUCTION_BLOCK_PATTERNS = [
+  /(?:^|\n)#\s*AGENTS\.md instructions(?:\s+for [^\r\n]*)?\r?\n\s*<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/gi,
 ];
 export const USEFUL_INPUT_KEYS = new Set([
   "file_path",
@@ -78,6 +82,7 @@ export const USEFUL_INPUT_KEYS = new Set([
   "glob",
 ]);
 export const TEST_PATTERNS = [
+  "node --test",
   "go test",
   "pytest",
   "python -m unittest",
@@ -116,6 +121,10 @@ export const DEVELOPMENT_PATH_SEGMENTS = new Set([
   "scripts", "server", "skills", "spec", "specs", "src", "test", "tests",
 ]);
 export const DEVELOPMENT_TEXT = /(?:代码|编码|编程|源码|程序|函数|方法|接口|前端|后端|服务端|客户端|数据库|脚本|配置文件|依赖|编译|构建|单元测试|集成测试|测试用例|重构|调试|排查|修复|缺陷|漏洞|仓库|分支|提交|合并请求|拉取请求|部署|容器|插件|命令行|架构|模块|组件|算法|数据结构|数据模型|中间件|微服务|技术方案|网页|网站|应用程序|开发(?:相关|环境|工具|流程|工作|任务|项目|功能|文档|规范|计划|者)|实现(?:功能|接口|模块|逻辑)|新增(?:功能|接口|模块)|修改(?:功能|接口|模块|逻辑))|\b(?:algorithm|api|architecture|backend|branch|bug|build|class|cli|code|coding|commit|compile|component|config(?:uration)?|container|data model|data structure|database|debug|dependency|deploy|docker|endpoint|fix|frontend|function|integration tests?|interface|merge request|method|microservice|middleware|migration|module|plugin|program(?:ming)?|pull request|refactor|repo(?:sitory)?|schema|script|sdk|source|sql|technical design|test cases?|unit tests?)\b/iu;
+export const NON_DEVELOPMENT_TEXT = /(?:调研|研究|旅行|旅游|行程|生活问答|天气|菜谱|推荐|比较|申请|免费(?:服务器|资源|额度)?|文案|视频|音视频|转链|报价|选购|采购|商品|链接|性价比|电脑|硬件|设备|云服务器|云厂商|方案(?:一|二)?|\b(?:research|recommend(?:ation)?|compare|comparison|free server|cloud provider|video processing|copywriting|purchase|pricing|travel|lifestyle|product link|value for money|computer hardware)\b)/iu;
+export const DEVELOPMENT_ACTION_TEXT = /(?:修复|修改|实现|新增|重构|调试|排查|测试|构建|编译|部署|安装|配置|迁移|提交|合并|发布|升级|开发|设计|技术方案|添加|删除|移除|重命名|编写(?:代码|脚本)|(?:写|改)代码|(?:写|改)脚本|运行(?:测试|命令))/iu;
+const HARDWARE_RECOMMENDATION_TEXT = /(?:商品|链接|性价比|电脑|硬件|设备|云服务器|云厂商|\b(?:mac(?:\s+mini)?|gpu|cpu|computer hardware|product link|value for money)\b)/iu;
+const STRONG_DEVELOPMENT_ACTION_TEXT = /(?:修复|修改|实现|新增|重构|调试|排查|测试|构建|编译|迁移|提交|合并|发布|升级|开发|设计|技术方案|添加|删除|移除|重命名|编写(?:代码|脚本)|(?:写|改)代码|(?:写|改)脚本|运行(?:测试|命令)|部署(?:脚本|服务|应用|模块|环境|项目)|配置(?:开发|运行|测试|构建|服务|模块|脚本|项目|环境)|安装(?:依赖|软件|服务|模块|工具|环境))/iu;
 export const DEVELOPMENT_COMMAND = /(?:^|[\s;&|])(?:bash|bun|cargo|cmake|deno|docker|dotnet|eslint|git|go|golangci-lint|gradle|gradlew|java|javac|make|mvn|node|npm|npx|php|pnpm|powershell|prettier|psql|pwsh|py|pytest|python|ruby|sh|terraform|tsc|vite|vitest|webpack|yarn)(?:$|\s)/i;
 
 const HELP = `usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]
@@ -123,6 +132,7 @@ const HELP = `usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAM
                          [--codex-sessions-root ROOT]
                          [--dsh-sessions-root ROOT]
                          [--pi-sessions-root ROOT]
+                         [--host HOST]
                          [--scope {development,all}]
                          [--output OUTPUT] [--force]
                          [--max-text-chars MAX_TEXT_CHARS]
@@ -147,6 +157,8 @@ options:
   --pi-sessions-root ROOT
                         pi sessions root (usually ~/.pi/agent/sessions);
                         repeatable
+  --host HOST            Host to scan: codex, claude, dsh or pi; repeatable.
+                         With no roots or host, defaults to codex only.
   --scope {development,all}
                         Scan development-related sessions only (default), or
                         retain all matched sessions
@@ -324,24 +336,34 @@ function discoverPiFiles(discovered, root) {
   visit(root);
 }
 
-export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots, dshSessionsRoots, piSessionsRoots) {
+export function discoverTranscripts(projectsRoots, sessionRoots, codexSessionsRoots, dshSessionsRoots, piSessionsRoots, selectedHosts = null) {
   const discovered = new Map();
+  const explicitHostSelection = selectedHosts != null;
+  const hosts = explicitHostSelection ? new Set(selectedHosts) : new Set(["claude", "codex", "dsh", "pi"]);
   const noExplicitRoots = (!projectsRoots || projectsRoots.length === 0)
     && (!sessionRoots || sessionRoots.length === 0)
     && (!codexSessionsRoots || codexSessionsRoots.length === 0)
     && (!dshSessionsRoots || dshSessionsRoots.length === 0)
     && (!piSessionsRoots || piSessionsRoots.length === 0);
-  if (noExplicitRoots) {
+  if (noExplicitRoots || explicitHostSelection) {
     const defaultClaudeRoot = path.join(os.homedir(), ".claude", "projects");
     const defaultCodexRoot = path.join(os.homedir(), ".codex", "sessions");
     const defaultDshRoot = path.join(os.homedir(), ".dsh", "sessions");
     const configuredPiRoot = process.env.PI_CODING_AGENT_SESSION_DIR
       || (process.env.PI_CODING_AGENT_DIR ? path.join(process.env.PI_CODING_AGENT_DIR, "sessions") : null);
     const defaultPiRoot = configuredPiRoot || path.join(os.homedir(), ...PI_DEFAULT_SESSION_DIR);
-    projectsRoots = fs.existsSync(defaultClaudeRoot) ? [defaultClaudeRoot] : [];
-    codexSessionsRoots = fs.existsSync(defaultCodexRoot) ? [defaultCodexRoot] : [];
-    dshSessionsRoots = fs.existsSync(defaultDshRoot) ? [defaultDshRoot] : [];
-    piSessionsRoots = fs.existsSync(defaultPiRoot) ? [defaultPiRoot] : [];
+    if (hosts.has("claude") && (!projectsRoots || projectsRoots.length === 0) && (!sessionRoots || sessionRoots.length === 0)) {
+      projectsRoots = fs.existsSync(defaultClaudeRoot) ? [defaultClaudeRoot] : [];
+    }
+    if (hosts.has("codex") && (!codexSessionsRoots || codexSessionsRoots.length === 0)) {
+      codexSessionsRoots = fs.existsSync(defaultCodexRoot) ? [defaultCodexRoot] : [];
+    }
+    if (hosts.has("dsh") && (!dshSessionsRoots || dshSessionsRoots.length === 0)) {
+      dshSessionsRoots = fs.existsSync(defaultDshRoot) ? [defaultDshRoot] : [];
+    }
+    if (hosts.has("pi") && (!piSessionsRoots || piSessionsRoots.length === 0)) {
+      piSessionsRoots = fs.existsSync(defaultPiRoot) ? [defaultPiRoot] : [];
+    }
   }
 
   const claudeRoots = [];
@@ -769,6 +791,11 @@ export function cleanHumanText(text) {
   }
   for (const tag of ["command-name", "command-message", "command-args"]) {
     cleaned = stripTagBlock(cleaned, tag);
+  }
+  for (const pattern of INSTRUCTION_BLOCK_PATTERNS) {
+    const updated = cleaned.replace(pattern, "");
+    if (updated !== cleaned) reasons.push("instruction-block");
+    cleaned = updated;
   }
   cleaned = cleaned.trim();
   if (NOISE_PREFIXES.some((prefix) => cleaned.startsWith(prefix))) {
@@ -1260,10 +1287,11 @@ export function iterContentBlocks(record) {
 
 export function classifyCommand(command) {
   const normalized = command.toLowerCase().trim().split(/\s+/).filter(Boolean).join(" ");
-  if (normalized.includes("git commit")) return "commit";
-  if (/\bgit\s+status\b/.test(normalized)) return "git_status";
-  if (/\bgit\s+diff\b/.test(normalized)) return "git_diff";
-  if (TEST_PATTERNS.some((pattern) => normalized.includes(pattern))) return "test";
+  const inspection = /\b(?:select-string|rg|grep|findstr|ripgrep|get-content|get-childitem)\b/.test(normalized);
+  if (!inspection && normalized.includes("git commit")) return "commit";
+  if (!inspection && /\bgit\s+status\b/.test(normalized)) return "git_status";
+  if (!inspection && /\bgit\s+diff\b/.test(normalized)) return "git_diff";
+  if (!inspection && TEST_PATTERNS.some((pattern) => normalized.includes(pattern))) return "test";
   return "shell";
 }
 
@@ -1272,7 +1300,11 @@ export function classifyTool(name, toolInput) {
   // DeepSeek Harness tools: the model calls run_code, which dispatches the real
   // sub-tools (read/write/edit/pwsh/...) as tool/code-dispatch events. pi tools
   // use lowercase native names (bash/read/write/edit/...).
-  if (normalizedName === "bash" || normalizedName === "shell") return classifyCommand(String(toolInput.command || toolInput.cmd || ""));
+  if (normalizedName === "bash" || normalizedName === "shell") {
+    const command = String(toolInput.command || toolInput.cmd || "");
+    if (isNestedApplyPatchCommand(command)) return "file_edit";
+    return classifyCommand(command);
+  }
   if (new Set(["read", "glob", "grep", "read_image", "find_dsh_plugin"]).has(normalizedName)) return "read";
   if (normalizedName === "write") return "file_write";
   if (normalizedName === "edit") return "file_edit";
@@ -1308,7 +1340,20 @@ export function isDevelopmentPath(value) {
 }
 
 export function isDevelopmentText(value) {
-  return typeof value === "string" && DEVELOPMENT_TEXT.test(value);
+  if (typeof value !== "string" || !DEVELOPMENT_TEXT.test(value)) return false;
+  if (NON_DEVELOPMENT_TEXT.test(value) && !DEVELOPMENT_ACTION_TEXT.test(value)) return false;
+  return !HARDWARE_RECOMMENDATION_TEXT.test(value) || STRONG_DEVELOPMENT_ACTION_TEXT.test(value);
+}
+
+function isNestedApplyPatchCommand(command) {
+  return typeof command === "string" && /\b(?:tools\.)?apply_patch\s*\(/.test(command);
+}
+
+function isDevelopmentCommand(command) {
+  if (typeof command !== "string" || !command.trim()) return false;
+  const normalized = command.toLowerCase();
+  if (/\b(?:select-string|rg|grep|findstr|ripgrep|get-content|get-childitem)\b/.test(normalized)) return false;
+  return DEVELOPMENT_COMMAND.test(command);
 }
 
 export function developmentSessionReasons(session) {
@@ -1329,7 +1374,8 @@ export function developmentSessionReasons(session) {
     if (pathKeys.some((key) => isDevelopmentPath(input[key]))) {
       reasons.add("development-path");
     }
-    if (typeof input.command === "string" && DEVELOPMENT_COMMAND.test(input.command)) reasons.add("development-command");
+    if (isDevelopmentCommand(input.command)) reasons.add("development-command");
+    if (isNestedApplyPatchCommand(input.command)) reasons.add("development-file");
     if (new Set(["question", "delegation"]).has(action.category) && isDevelopmentText(JSON.stringify(input))) {
       reasons.add("development-tool-context");
     }
@@ -1337,10 +1383,96 @@ export function developmentSessionReasons(session) {
   for (const request of session.human_requests || []) {
     if (isDevelopmentText(request.content?.text)) reasons.add("development-request");
   }
-  for (const message of session.assistant_visible_messages || []) {
-    if (isDevelopmentText(message.visible_text?.text)) reasons.add("development-response");
-  }
   return [...reasons].sort();
+}
+
+function developmentAction(action) {
+  if (!action) return false;
+  if (new Set(["git_status", "git_diff", "test", "commit"]).has(action.category)) return true;
+  const normalizedName = String(action.name || "").toLowerCase();
+  if (normalizedName === "lsp" || normalizedName.includes("codegraph")) return true;
+  const input = action.input || {};
+  const pathKeys = ["file_path", "notebook_path", "path", "glob"];
+  if (normalizedName === "glob") pathKeys.push("pattern");
+  if (pathKeys.some((key) => isDevelopmentPath(input[key]))) return true;
+  if (isDevelopmentCommand(input.command)) return true;
+  if (isNestedApplyPatchCommand(input.command)) return true;
+  return new Set(["question", "delegation"]).has(action.category)
+    && isDevelopmentText(JSON.stringify(input));
+}
+
+function topicSpans(session) {
+  const requests = [...(session.human_requests || [])]
+    .filter((request) => Number.isInteger(request.line))
+    .sort((left, right) => left.line - right.line);
+  if (requests.length === 0) return [{ start: Number.NEGATIVE_INFINITY, end: Number.POSITIVE_INFINITY, request: null }];
+  return requests.map((request, index) => ({
+    start: request.line,
+    end: requests[index + 1]?.line ?? Number.POSITIVE_INFINITY,
+    request,
+  }));
+}
+
+function spanForLine(spans, line) {
+  return spans.find((span) => line >= span.start && line < span.end) || (line < spans[0].start ? spans[0] : spans.at(-1));
+}
+
+/**
+ * Keep only development topics from a mixed session. The scanner still uses
+ * the whole session to decide whether it is a development session, but the
+ * handoff view must not expose unrelated user topics or their tool evidence.
+ */
+export function filterDevelopmentSession(session) {
+  const spans = topicSpans(session);
+  const actionById = new Map((session.tool_actions || []).map((action) => [action.tool_use_id, action]));
+  for (const span of spans) {
+    span.development = isDevelopmentText(span.request?.content?.text);
+  }
+  for (const action of session.tool_actions || []) {
+    if (developmentAction(action)) spanForLine(spans, action.line).development = true;
+  }
+  const keepLine = (line) => spanForLine(spans, line)?.development === true;
+  const keepActionId = (toolUseId) => keepLine(actionById.get(toolUseId)?.line ?? Number.NEGATIVE_INFINITY);
+  const filteredCounts = { topics: 0, human_requests: 0, assistant_visible_messages: 0, tool_actions: 0 };
+  const keptSpans = new Set(spans.filter((span) => span.development));
+  filteredCounts.topics = spans.length - keptSpans.size;
+
+  const humanRequests = (session.human_requests || []).filter((request) => {
+    const keep = spanForLine(spans, request.line)?.development === true;
+    if (!keep) filteredCounts.human_requests += 1;
+    return keep;
+  });
+  const assistantMessages = (session.assistant_visible_messages || []).filter((message) => {
+    const developmentToolUse = (message.tool_use_ids || []).some((toolUseId) => {
+      const action = actionById.get(toolUseId);
+      return action && developmentAction(action);
+    });
+    const developmentText = isDevelopmentText(message.visible_text?.text);
+    const keep = keepLine(message.first_line) && (developmentToolUse || developmentText);
+    if (!keep) filteredCounts.assistant_visible_messages += 1;
+    return keep;
+  });
+  const toolActions = (session.tool_actions || []).filter((action) => {
+    const keep = keepLine(action.line);
+    if (!keep) filteredCounts.tool_actions += 1;
+    return keep;
+  });
+  const filterByAction = (items) => items.filter((item) => keepActionId(item.tool_use_id));
+  return {
+    ...session,
+    human_requests: humanRequests,
+    assistant_visible_messages: assistantMessages,
+    tool_actions: toolActions,
+    decisions: filterByAction(session.decisions || []),
+    file_changes: filterByAction(session.file_changes || []),
+    tests: filterByAction(session.tests || []),
+    commits: filterByAction(session.commits || []),
+    task_tracking: filterByAction(session.task_tracking || []),
+    diagnostics: {
+      ...(session.diagnostics || {}),
+      development_topic_filter: filteredCounts,
+    },
+  };
 }
 
 export function resultStatus(result, inDate) {
@@ -1747,6 +1879,14 @@ export function buildSession(sessionId, records, selectedDate, maxText) {
         commit_hash: commitHash,
         subject: subject ? sanitizeText(subject) : null,
       });
+    } else if (isNestedApplyPatchCommand(toolInput.command)) {
+      const applied = status === "success" ? "observed_applied" : status === "error" ? "failed" : "attempted_unverified";
+      fileChanges.push({
+        tool_use_id: toolUseId,
+        path: null,
+        operation: "file_edit",
+        status: applied,
+      });
     } else if (category === "task_tracking") {
       taskTracking.push({
         tool_use_id: toolUseId,
@@ -1836,34 +1976,38 @@ function basenameAnyPlatform(value) {
   return path.win32.basename(value.replaceAll("/", "\\"));
 }
 
+function ancestorRoots(values) {
+  const unique = [...new Set(values)].sort((left, right) => left.length - right.length || left.localeCompare(right));
+  return unique.filter((candidate) => !unique.some((other) => other !== candidate && pathIsWithin(candidate, other)));
+}
+
 export function projectIndex(sessions) {
+  const sessionRoots = new Map();
   const observedRoots = [];
   for (const session of sessions) {
-    if (session.cwd) observedRoots.push(String(session.cwd).replaceAll("\\", "/"));
+    const roots = [];
+    if (session.cwd && isAbsoluteAnyPlatform(String(session.cwd))) roots.push(String(session.cwd).replaceAll("\\", "/"));
     for (const action of session.tool_actions || []) {
       for (const key of ["cwd", "workdir"]) {
         const value = action.input?.[key];
         if (typeof value === "string" && isAbsoluteAnyPlatform(value)) {
-          observedRoots.push(value.replaceAll("\\", "/"));
+          roots.push(value.replaceAll("\\", "/"));
         }
       }
     }
+    const canonical = ancestorRoots(roots);
+    sessionRoots.set(session.session_key || `${session.host || "claude"}:${session.session_id}`, canonical);
+    observedRoots.push(...canonical);
   }
-  const knownRoots = [...new Set(observedRoots)].sort((left, right) => right.length - left.length);
+  const knownRoots = ancestorRoots(observedRoots).sort((left, right) => right.length - left.length);
   const projects = new Map();
   const externalEvidence = [];
 
   for (const session of sessions) {
-    const assigned = new Set();
-    if (session.cwd) assigned.add(String(session.cwd).replaceAll("\\", "/"));
-    for (const action of session.tool_actions || []) {
-      for (const key of ["cwd", "workdir"]) {
-        const value = action.input?.[key];
-        if (typeof value === "string" && isAbsoluteAnyPlatform(value)) {
-          assigned.add(value.replaceAll("\\", "/"));
-        }
-      }
-    }
+    const sessionKey = session.session_key || `${session.host || "claude"}:${session.session_id}`;
+    const assigned = new Set([...sessionRoots.get(sessionKey) || []].map((candidate) =>
+      knownRoots.find((root) => pathIsWithin(candidate, root)) || candidate,
+    ));
     for (const change of session.file_changes || []) {
       const filePath = change.raw_path ?? change.path;
       if (typeof filePath !== "string" || !isAbsoluteAnyPlatform(filePath)) continue;
@@ -1908,7 +2052,6 @@ export function projectIndex(sessions) {
         });
       }
       const project = projects.get(key);
-      const sessionKey = session.session_key || `${session.host || "claude"}:${session.session_id}`;
       if (!project.session_keys.includes(sessionKey)) project.session_keys.push(sessionKey);
       if (!project.session_ids.includes(session.session_id)) project.session_ids.push(session.session_id);
       project.counts.human_requests += (session.human_requests || []).filter((item) => !item.cwd || pathIsWithin(String(item.cwd), projectPath)).length;
@@ -1958,7 +2101,7 @@ export function buildDocument(sources, selectedDate, timezone, timezoneRequested
       sessionsFilteredNonDevelopment += 1;
       continue;
     }
-    sessions.push(session);
+    sessions.push(scope === "development" ? filterDevelopmentSession(session) : session);
   }
   sessions.sort((left, right) => left.first_selected_at.localeCompare(right.first_selected_at) || left.session_key.localeCompare(right.session_key));
   const [projects, externalPathEvidence] = projectIndex(sessions);
@@ -1970,6 +2113,7 @@ export function buildDocument(sources, selectedDate, timezone, timezoneRequested
       timezone_resolved: timezoneResolved,
       scope,
       subagent_mode: "metadata_only",
+      hosts: [...new Set(sources.map((source) => source.host))].sort(),
       sources: [...sources],
     },
     diagnostics: {
@@ -2050,6 +2194,7 @@ export function parseArgs(argv) {
     codex_sessions_root: [],
     dsh_sessions_root: [],
     pi_sessions_root: [],
+    hosts: [],
     scope: "development",
     output: null,
     force: false,
@@ -2087,6 +2232,13 @@ export function parseArgs(argv) {
       let value;
       [value, index] = optionValue(argv, index, "--pi-sessions-root");
       args.pi_sessions_root.push(value);
+    } else if (option === "--host") {
+      let value;
+      [value, index] = optionValue(argv, index, "--host");
+      if (!["claude", "codex", "dsh", "pi"].includes(value)) {
+        throw new Error(`argument --host: invalid choice: ${JSON.stringify(value)} (choose from 'claude', 'codex', 'dsh', 'pi')`);
+      }
+      args.hosts.push(value);
     } else if (option === "--scope") {
       [args.scope, index] = optionValue(argv, index, "--scope");
       if (!new Set(["development", "all"]).has(args.scope)) {
@@ -2115,12 +2267,23 @@ export function parseArgs(argv) {
   return args;
 }
 
+export function selectedHosts(args) {
+  if (args.hosts.length > 0) return new Set(args.hosts);
+  const explicit = new Set();
+  if (args.claude_projects_root.length > 0 || args.claude_session_root.length > 0) explicit.add("claude");
+  if (args.codex_sessions_root.length > 0) explicit.add("codex");
+  if (args.dsh_sessions_root.length > 0) explicit.add("dsh");
+  if (args.pi_sessions_root.length > 0) explicit.add("pi");
+  return explicit.size > 0 ? explicit : new Set(["codex"]);
+}
+
 function printCliError(message) {
   process.stderr.write("usage: scan_sessions.mjs [-h] --date DATE [--timezone TIMEZONE_NAME]\n");
   process.stderr.write("                         [--claude-projects-root ROOT | --claude-session-root ROOT]\n");
   process.stderr.write("                         [--codex-sessions-root ROOT]\n");
   process.stderr.write("                         [--dsh-sessions-root ROOT]\n");
   process.stderr.write("                         [--pi-sessions-root ROOT]\n");
+  process.stderr.write("                         [--host HOST]\n");
   process.stderr.write("                         [--scope {development,all}]\n");
   process.stderr.write("                         [--output OUTPUT] [--force]\n");
   process.stderr.write("                         [--max-text-chars MAX_TEXT_CHARS]\n");
@@ -2137,12 +2300,23 @@ export function main(argv = process.argv.slice(2)) {
     }
     if (args.max_text_chars <= 0) throw new Error("--max-text-chars must be greater than zero");
     const [timezone, timezoneResolved] = resolveTimezone(args.timezone_name);
+    const hosts = selectedHosts(args);
+    const explicitRootHosts = [
+      ["claude", args.claude_projects_root.length > 0 || args.claude_session_root.length > 0],
+      ["codex", args.codex_sessions_root.length > 0],
+      ["dsh", args.dsh_sessions_root.length > 0],
+      ["pi", args.pi_sessions_root.length > 0],
+    ];
+    for (const [host, hasRoot] of explicitRootHosts) {
+      if (hasRoot && !hosts.has(host)) throw new Error(`explicit ${host} root requires --host ${host}`);
+    }
     const sources = discoverTranscripts(
-      args.claude_projects_root,
-      args.claude_session_root,
-      args.codex_sessions_root,
-      args.dsh_sessions_root,
-      args.pi_sessions_root,
+      hosts.has("claude") ? args.claude_projects_root : [],
+      hosts.has("claude") ? args.claude_session_root : [],
+      hosts.has("codex") ? args.codex_sessions_root : [],
+      hosts.has("dsh") ? args.dsh_sessions_root : [],
+      hosts.has("pi") ? args.pi_sessions_root : [],
+      hosts,
     );
     const document = buildDocument(
       sources,
@@ -2171,6 +2345,7 @@ export {
   cleanHumanText as clean_human_text,
   discoverTranscripts as discover_transcripts,
   developmentSessionReasons as development_session_reasons,
+  filterDevelopmentSession as filter_development_session,
   extractDecisionAnswers as extract_decision_answers,
   extractExitCode as extract_exit_code,
   extractText as extract_text,
@@ -2186,6 +2361,7 @@ export {
   parseDate as parse_date,
   parseTimestamp as parse_timestamp,
   pathIsWithin as path_is_within,
+  selectedHosts as selected_hosts,
   projectIndex as project_index,
   readRecords as read_records,
   recordInDate as record_in_date,

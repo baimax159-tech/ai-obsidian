@@ -30,7 +30,7 @@
 
 只在 project 目录下直接、仅按固定文件名 `session.jsonl` 或 `session.jsonl.zstd` 发现会话文件。`session.jsonl.zstd` 是标准 Zstandard 帧拼接（首帧只含 header 行，其后为追加帧）；读取时逐帧解压后合并为逻辑 JSONL。一个 root 只属于一种编码，发现时优先识别 `.jsonl.zstd`，否则回落到 `.jsonl`。
 
-默认调用同时尝试四个宿主目录；缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
+默认调用只尝试 Codex 宿主目录；通过 `--host claude`、`--host dsh` 或 `--host pi` 显式扩展。缺失的默认目录直接跳过。用户显式指定但不存在的目录属于参数错误。
 
 ## 会话标识
 
@@ -157,6 +157,7 @@ pi 是会话来源，不是插件 OSS 宿主；仓库仍以 Claude Code 与 Code
 优先使用目标日期内的 session cwd，再使用工具 input 中的 `cwd/workdir`。Claude project slug 只作 fallback。外部文件修改进入 `external_path_evidence`，不自动创建新项目。
 
 项目索引使用 `session_keys` 表达多宿主会话；`session_ids` 仅作兼容信息。
+同一会话的 `cwd`、`workdir` 和 `file_changes` 路径先按路径包含关系归一到最上层 canonical root，子目录不单独提升为项目。
 
 ## 开发范围过滤
 
@@ -165,13 +166,13 @@ pi 是会话来源，不是插件 OSS 宿主；仓库仍以 Claude Code 与 Code
 - 源码、开发配置、插件/技能文件或常见仓库文件路径；
 - 文件编辑、测试、构建、lint、Git 或常见开发命令；
 - LSP、CodeGraph 等代码导航工具；
-- 用户诉求、Assistant 可见结论或委派/确认输入中明确的开发语义。
+- 用户诉求或委派/确认输入中明确的开发语义；研究、采购、硬件选型、生活和媒体能力清单只有同时包含明确开发动作时才保留。Assistant 可见结论只能补充已命中的主题，不能单独把研究或生活会话提升为开发会话；研究性回答也不作为开发主题正文。
 
 普通文档、图片/音视频、旅行生活问答和通用写作不会仅因发生在某个 cwd 下而视为开发工作。输出诊断记录 `sessions_examined`、`sessions_filtered_non_development` 和最终 `sessions_matched`；保留会话的 `diagnostics.development_signals` 记录命中的确定性信号。
 
 ## 派生证据
 
-- `file_changes`：Write/Edit/NotebookEdit/Codex patch 的成功、失败或未确认状态。
+- `file_changes`：Write/Edit/NotebookEdit/Codex patch 的成功、失败或未确认状态；Codex `exec` 包装中明确调用 `tools.apply_patch(...)` 时也记录为文件编辑证据（路径未知时保留 `path: null`）。
 - `tests`：识别测试、构建和 lint 命令及 exit code。
 - `commits`：只有实际 commit 命令才算提交动作。
 - `task_tracking`：记录任务状态，但 `proves_implementation=false`。

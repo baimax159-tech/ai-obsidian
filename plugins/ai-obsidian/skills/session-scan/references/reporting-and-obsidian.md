@@ -31,6 +31,7 @@
 4. Claude project slug fallback。
 
 同一会话可涉及多个项目。普通依赖查阅不要误判为操作该项目。多宿主关联使用 `session_key`，不要用裸 session ID。
+同一会话的嵌套 `cwd/workdir` 只归入最上层 canonical 项目根，子目录作为文件证据保留，不重复创建项目。
 
 ## 当前状态核验
 
@@ -99,26 +100,39 @@ Claude Code 使用 `Skill` 工具调用；Codex 使用当前宿主可用的技�
 
 ## Handoff 内容
 
-向 `task-hub` 提供语义，不提供行号插入指令：
+向 `task-hub` 提供 `session-scan/handoff/v1`，不提供行号插入指令：
 
 ```text
-任务库根路径：<用户明确路径>
-日期：YYYY-MM-DD
-项目：<待 task-hub 扫描/确认的项目分区>
+handoff_version: session-scan/handoff/v1
+task_vault_root: <用户明确路径或 null>
+scan_date: YYYY-MM-DD
+write_authorized: true|false
+projects:
+  - project: <待 task-hub 扫描/确认的项目分区>
+    workstreams:
+      - workstream_id: <稳定 ID>
+        title: <工作主线标题>
+        evidence_level: verified_complete|landed_unverified|attempted_unconfirmed|blocked|discussion_only
+        task_state: completed|in_progress|blocked|not_started|skip
+        start_date: YYYY-MM-DD|null
+        planned_end_date: YYYY-MM-DD|null
+        completed_date: YYYY-MM-DD|null
+        source_session_keys: [<host:session-id>]
+        evidence:
+          human_requests: []
+          decisions: []
+          file_changes: []
+          tests: []
+          commits: []
+        summary: <最小必要证据摘要>
+unmapped_evidence: []
 
-工作主线（每条主线 = 一个父任务候选；单一事项主线作叶子任务，不建父任务）：
-1. <模块/目标名>
-   - [x] <子任务事项> 🛫 <开始> 📅 <计划完成> ✅ <实际完成>
-   - [/] <子任务事项> 🛫 <开始> 📅 <计划完成>
-2. <独立事项：单一主线，作叶子任务>
-   - [x] <事项> 🛫 <开始> 📅 <计划完成> ✅ <实际完成>
-
-证据摘要：<最小必要的修改/测试/提交事实>
+工作主线按同一模块/目标归组；主线只有一个事项时由 task-hub 作为叶子任务。
 ```
 
-按「同一模块/目标」归组为父任务，不同模块/目标分开；主线只有 1 个事项时作叶子任务、不硬套父壳。只传递任务语义、证据等级、日期和当前用户授权。具体项目分区、标签、缩进、备注与归档规则由 `task-hub` 在执行时读取自己的 `references/task-format.md` 和定位协议决定，`session-scan` 不复制或覆盖这些格式契约。
+按「同一模块/目标」归组为父任务，不同模块/目标分开；主线只有 1 个事项时作叶子任务、不硬套父壳。只传递任务语义、证据等级、日期和当前用户授权。具体项目分区、标签、缩进、备注与归档规则由 `task-hub` 在执行时读取自己的 `references/task-format.md` 和定位协议决定，`session-scan` 不复制或覆盖这些格式契约。不要从长篇中文总结再次猜测任务；以 handoff 中的工作主线为唯一任务候选来源。
 
-缺项目、父任务、开始日期或计划完成日期时，由 `task-hub` 按其定位和确认协议处理。
+缺项目、父任务、开始日期或计划完成日期时，由 `task-hub` 按其定位和确认协议处理；日期缺失保持 `null`，不可用扫描日期代替。
 
 ## 状态映射
 
@@ -126,7 +140,7 @@ Claude Code 使用 `Skill` 工具调用；Codex 使用当前宿主可用的技�
 | --- | --- |
 | 已验证完成 | `[x]`，补 `✅` |
 | 已落地但尚未完整验证 | `[/]` |
-| 尝试但未确认 | `[/]` 或 `[?]`，按阻塞性质决定 |
+| 尝试但未确认 | `[?]` |
 | 评审失败、等待决策或外部条件 | `[?]` |
 | 仅讨论/建议 | 默认不创建；用户要求转任务时创建 `[ ]` |
 
