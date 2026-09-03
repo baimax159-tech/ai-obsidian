@@ -40,7 +40,7 @@
 
 ## 依赖插件
 
-**仅周报依赖 AnyBlock。** 创建 / 修改 / 归档 / 其余报告纯 Markdown + HTML。周报表格用 Obsidian 社区插件 **AnyBlock**（`any-block`）的 `[list2table]` 渲染，保留 `项目 | 任务 | 完成情况` 三列表格观感；源码是紧凑列表，行按状态分组、跨项目合并。未安装 AnyBlock 时周报退化为普通列表，其余功能零依赖。
+周报使用 Sheets Basic 可渲染的标准 Markdown 三列表格，按 `^` 续行语义合并同一项目；不使用 AnyBlock、`[list2table]`、HTML `<table>` 或混排格式。周报默认只读取 `计划中.md`，避免归档副本造成重复统计。
 
 ## 旧数据兼容
 
