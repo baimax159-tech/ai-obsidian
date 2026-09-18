@@ -86,7 +86,7 @@ git log --since=<start> --until=<end> --oneline
 ai-obsidian:task-hub
 ```
 
-Claude Code 使用 `Skill` 工具调用；Codex 使用当前宿主可用的技能调用方式。调用能力不可用时只返回 handoff，明确说明没有写入。
+使用当前可用的技能调用方式。调用能力不可用时只返回 handoff，明确说明没有写入。
 
 禁止：
 

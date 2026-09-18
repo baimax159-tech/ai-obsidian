@@ -5,7 +5,7 @@
 ## 触发方式
 
 ```
-/ai-obsidian:vault-init
+$ai-obsidian:vault-init
 ```
 
 或直接说："初始化 Obsidian 仓库"、"给我的笔记库搭个聚合首页 / dashboard"、"新建一个 Obsidian 库骨架"。
@@ -29,13 +29,13 @@
 - **时间全取 `file.mtime`** —— 趋势、热力、最近更新都基于文件修改时间，无需任何日期字段。
 - **仓库名即品牌名** —— Hero 标题自动取 `app.vault.getName()`，改库名即改标题。
 
-## 必做手动项（Claude 点不动，需你手动）
+## 必做手动项（需要你手动完成）
 
 首页是一段 `dataviewjs`，缺插件或没开 JS 查询会整页白屏：
 
 1. **装社区插件**：`Dataview`（必需）、`Homepage`（必需），各自 Enable。
 2. **开 Dataview 的 JS 查询**：设置 → Dataview → **Enable JavaScript Queries = 开**。
-3. **指 Homepage 到首页**：设置 → Homepage → 首页指向 `首页`，勾 Open on startup（若初始化时插件未装，装完可让 Claude 补写 `data.json`）。
+3. **指 Homepage 到首页**：设置 → Homepage → 首页指向 `首页`，勾 Open on startup（若初始化时插件未装，装完可让 Codex 补写 `data.json`）。
 4. **重启 Obsidian** 验证首页自动打开并渲染。
 
 可选增强：`Style Settings`（主题微调）、`Iconize`（子库文件夹图标）。

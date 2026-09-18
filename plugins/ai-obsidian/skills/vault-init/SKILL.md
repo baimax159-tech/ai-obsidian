@@ -1,6 +1,6 @@
 ---
 name: vault-init
-description: 初始化 Obsidian 顶级知识仓库：一次性铺好「全动态聚合仪表盘首页 + 子库骨架 + Inbox + 入口文件 + Homepage/Dataview 配置」，让空库开箱即有可用首页。当用户说"初始化 Obsidian 仓库/知识库"、"搭建 Obsidian 首页/仪表盘/dashboard"、"新建 Obsidian vault 骨架"、"给我的笔记库做个聚合首页"或使用 /ai-obsidian:vault-init 时触发。
+description: 初始化 Obsidian 顶级知识仓库：一次性铺好「全动态聚合仪表盘首页 + 子库骨架 + Inbox + 入口文件 + Homepage/Dataview 配置」，让空库开箱即有可用首页。当用户说"初始化 Obsidian 仓库/知识库"、"搭建 Obsidian 首页/仪表盘/dashboard"、"新建 Obsidian vault 骨架"、"给我的笔记库做个聚合首页"或使用 `$ai-obsidian:vault-init` 时触发。
 allowed-tools: Read, Write, Bash, Glob, AskUserQuestion
 disable-model-invocation: false
 ---

@@ -4,13 +4,13 @@
 
 ## 使用方式
 
-Claude Code：
+安装插件后，显式调用：
 
 ```text
-/ai-obsidian:session-scan
+$ai-obsidian:session-scan
 ```
 
-Codex 安装插件后，直接请求“扫描今天的 Codex 工作记录”或“总结昨天的编码会话”；需要同时扫描 Claude Code、DeepSeek Harness 和 pi 时明确指定宿主。
+也可以直接说“扫描今天的 Codex 工作记录”或“总结昨天的编码会话”。默认只扫描 Codex；需要同时扫描 Claude Code、DeepSeek Harness 或 pi 时，明确指定宿主。
 
 默认只扫描 Codex；以下是可用的宿主默认目录，需要扩展时显式使用 `--host`：
 

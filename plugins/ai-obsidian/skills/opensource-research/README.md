@@ -4,7 +4,7 @@
 
 ## 触发方式
 
-- 斜杠命令：`/ai-obsidian:opensource-research`
+- 显式调用：`$ai-obsidian:opensource-research`
 - 关键词：说"调研 X"、"研究下 X 这个开源项目"、"评估 X 是否值得用"，或直接给出一个 GitHub 仓库地址让评估时自动触发
 
 ## 功能

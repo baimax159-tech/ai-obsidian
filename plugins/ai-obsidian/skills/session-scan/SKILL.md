@@ -38,7 +38,7 @@ Claude Code 只读取项目目录根级主会话 JSONL，不递归合并 `subage
 
 ## 步骤 2：运行确定性扫描器
 
-从宿主加载 Skill 时提供的 base directory 获取 `<skill-base-dir>`，不要假定当前工作目录就是 Skill 目录。Claude Code 使用 Skill 加载输出中的 `Base directory for this skill`；Codex 使用已安装插件中的 `skills/session-scan` 目录。无法可靠确定时停止并要求提供插件安装路径，不猜测路径。
+从已安装插件中的 `skills/session-scan` 目录获取 `<skill-base-dir>`，不要假定当前工作目录就是 Skill 目录。无法可靠确定时停止并要求提供插件安装路径，不猜测路径。
 
 执行默认 Codex 扫描：
 
@@ -166,7 +166,7 @@ git log --since="<start>" --until="<end>" --oneline
 默认不与任务管理联动。仅在当前真实用户回合明确要求“写入 Obsidian”“同步今日任务”等操作时：
 
 1. 先生成并校验 `session-scan/handoff/v1` 结构化交接；每条工作主线包含稳定 `workstream_id`、项目、标题、证据等级、状态、来源 session key、证据摘要和日期字段。缺失日期必须为 `null`。
-2. Claude Code 使用 `Skill` 调用 `ai-obsidian:task-hub`。Codex 能调用已安装技能时调用同一 `task-hub`；不能调用时仅输出并校验结构化 handoff，需要补字段时使用 Codex 原生文本交互，不直接猜测。
+2. 能调用已安装技能时调用 `task-hub`；不能调用时仅输出并校验结构化 handoff，需要补字段时使用原生文本交互，不直接猜测。
 3. 让 `task-hub` 扫描项目分区、定位任务、确认缺失字段，并按其自身格式契约写入。
 4. Skill 调用不可用时只返回已校验的 handoff 内容，明确说明未写入。
 

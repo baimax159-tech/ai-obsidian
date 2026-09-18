@@ -23,7 +23,7 @@
 ## 使用
 
 ```
-/ai-obsidian:task-hub
+$ai-obsidian:task-hub
 ```
 
 或直接口令：

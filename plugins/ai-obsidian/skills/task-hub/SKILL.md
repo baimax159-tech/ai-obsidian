@@ -1,6 +1,6 @@
 ---
 name: task-hub
-description: 管理 Obsidian Markdown 任务的统一入口，覆盖创建、查看/筛选、状态与时间调整、标题/备注/优先级修改、项目移动、父子结构、归档/恢复、旧格式迁移，以及日报、周报、月报、季度、半年、年度和任意日期范围工作总结。用户提出任务管理、查看任务、完成/延期/重命名任务、生成工作报告，或显式调用 /ai-obsidian:task-hub 时使用。
+description: 管理 Obsidian Markdown 任务的统一入口，覆盖创建、查看/筛选、状态与时间调整、标题/备注/优先级修改、项目移动、父子结构、归档/恢复、旧格式迁移，以及日报、周报、月报、季度、半年、年度和任意日期范围工作总结。用户提出任务管理、查看任务、完成/延期/重命名任务、生成工作报告，或显式调用 `$ai-obsidian:task-hub` 时使用。
 allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 ---
 
@@ -35,7 +35,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Skill, AskUserQuestion
 - handoff 中日期为 `null` 时集中询问用户，未补齐前不写入；不得用扫描日期或当前日期代替计划完成日期。
 - 查看属于只读操作，不要求写入确认。
 - 修改已有任务、移动项目、改变结构、归档/恢复、替换报告和批量迁移前，回显精确目标与拟变更；确认后才写。
-- Claude Code 优先使用 `AskUserQuestion`；Codex 使用可用的原生确认方式；没有选择 UI 时使用简洁文本问题。
+- 使用可用的原生确认方式；没有选择 UI 时使用简洁文本问题。
 - 新建不存在的任务或报告文件可直接创建；已有同周期报告按 `reporting.md` 的冲突流程处理。
 - 只管理任务、报告和用户明确要求安装的任务样式，不改首页等无关文件。
 

@@ -140,7 +140,7 @@ pi session 文件是 JSONL，首行 header 为 `{ "type": "session", "version", 
 - header 顶点 `id` 是会话 ID，`cwd` 是项目归属；header 之外的文件名 UUID 仅作 fallback。
 - 未知 entry type、未知 version 不崩溃，只作为 metadata 忽略；scanner 从不写回 session 文件。
 
-pi 是会话来源，不是插件 OSS 宿主；仓库仍以 Claude Code 与 Codex 为发布目标。
+pi 是会话来源，不是插件运行宿主；本仓库统一以 Codex 为运行与发布宿主。
 
 ## 结果状态
 
